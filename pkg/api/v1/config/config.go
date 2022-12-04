@@ -14,17 +14,17 @@ type HeatControlType string
 var HeatControlTypeThermiaGenesis = HeatControlType("thermiagenesis")
 
 type Config struct {
-	HeatControlType HeatControlType
+	HeatControlType HeatControlType `json:"heatControlType"`
 	// Always consider price sheep if below this level
-	ConsideredCheap float64
+	ConsideredCheap float64 `json:"consideredCheap"`
 
 	// HotWaterHours how many hours during the cheapest period of one day we should prioritize hotwater.
-	HotWaterHours int64
+	HotWaterHours int64 `json:"hotWaterHours"`
 
 	// How to calculate the price level
-	LevelFormula LevelFormula
-	Currency     Currency
+	LevelFormula LevelFormula `json:"levelFormula"`
+	Currency     Currency     `json:"currency"`
 
 	// if not 0.0 we need to calculate if fjärrvärme is more ecomoic for that (day or hour?? TODO)
-	DistrictHeatingPrice float64
+	DistrictHeatingPrice float64 `json:"districtHeatingPrice"`
 }
