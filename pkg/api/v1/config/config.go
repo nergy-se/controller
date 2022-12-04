@@ -1,4 +1,4 @@
-package v1
+package config
 
 // SEK default for now.
 type Currency string
