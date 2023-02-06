@@ -19,6 +19,7 @@ type HourConfig struct {
 	Hotwater bool      `json:"hotwater"`
 	Heating  bool      `json:"heating"`
 }
+type Schedule map[time.Time]*HourConfig
 
 type CloudConfig struct {
 	HeatControlType types.HeatControlType `json:"heatControlType"`
@@ -26,7 +27,7 @@ type CloudConfig struct {
 
 type Config struct {
 	heatControlType types.HeatControlType
-	schedule        map[time.Time]*HourConfig
+	schedule        Schedule
 	mutex           sync.Mutex
 }
 
@@ -41,10 +42,17 @@ func (s *Config) SetHeatControlType(t types.HeatControlType) {
 	s.heatControlType = t
 	s.mutex.Unlock()
 }
-
-func (s *Config) Add(hour *HourConfig) {
+func (s *Config) HeatControlType() types.HeatControlType {
 	s.mutex.Lock()
-	s.schedule[hour.Time] = hour
+	defer s.mutex.Unlock()
+	return s.heatControlType
+}
+
+func (s *Config) MergeSchedule(schedule Schedule) {
+	s.mutex.Lock()
+	for _, hour := range schedule {
+		s.schedule[hour.Time] = hour
+	}
 	s.mutex.Unlock()
 }
 
