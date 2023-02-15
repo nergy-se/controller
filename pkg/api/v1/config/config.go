@@ -11,6 +11,10 @@ import (
 type CliConfig struct {
 	Server   string `default:"https://nergy.se"`
 	APIToken string
+
+	ControllerType string
+	Address        string
+
 	LogLevel string `default:"info"`
 }
 
@@ -23,29 +27,19 @@ type Schedule map[time.Time]*HourConfig
 
 type CloudConfig struct {
 	HeatControlType types.HeatControlType `json:"heatControlType"`
+	Address         string                `json:"address"`
+	ControllerId    string                `json:"controllerId"`
 }
 
 type Config struct {
-	heatControlType types.HeatControlType
-	schedule        Schedule
-	mutex           sync.Mutex
+	schedule Schedule
+	mutex    sync.Mutex
 }
 
 func NewConfig() *Config {
 	return &Config{
 		schedule: make(map[time.Time]*HourConfig),
 	}
-}
-
-func (s *Config) SetHeatControlType(t types.HeatControlType) {
-	s.mutex.Lock()
-	s.heatControlType = t
-	s.mutex.Unlock()
-}
-func (s *Config) HeatControlType() types.HeatControlType {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.heatControlType
 }
 
 func (s *Config) MergeSchedule(schedule Schedule) {

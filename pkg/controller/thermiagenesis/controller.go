@@ -13,6 +13,12 @@ type Thermiagenesis struct {
 	client modbus.Client
 }
 
+func New(client modbus.Client) *Thermiagenesis {
+	return &Thermiagenesis{
+		client: client,
+	}
+}
+
 func (ts *Thermiagenesis) State() (*state.State, error) {
 	s := &state.State{
 		Indoor:             nil,
@@ -69,18 +75,20 @@ func (ts *Thermiagenesis) AllowHotwater() error {
 }
 
 func (ts *Thermiagenesis) BoostHotwater() error {
-	_, err := client.WriteSingleRegister(22, uint16(start*100)) // 100 = 1c
+	// TODO
+	start := 555
+	stop := 65
+	_, err := ts.client.WriteSingleRegister(22, uint16(start*100)) // 100 = 1c
 	if err != nil {
 		return fmt.Errorf("error writeTemps 22: %w", err)
 	}
 
-	_, err = client.WriteSingleRegister(23, uint16(stop*100))
+	_, err = ts.client.WriteSingleRegister(23, uint16(stop*100))
 	if err != nil {
 		return fmt.Errorf("error writeTemps 23: %w", err)
 	}
 	return nil
 
-	return nil
 }
 
 func decode(data []byte) int {
