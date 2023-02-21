@@ -37,27 +37,20 @@ func (ts *Dummy) State() (*state.State, error) {
 
 	return s, nil
 }
-func (ts *Dummy) BlockHeating() error {
-	logrus.Info("dummy: BlockHeating")
-	return nil
-}
-func (ts *Dummy) AllowHeating() error {
-	logrus.Info("dummy: AllowHeating")
+
+func (ts *Dummy) AllowHeating(b bool) error {
+	logrus.Info("dummy: AllowHeating", b)
 	return nil
 }
 
-func (ts *Dummy) BlockHotwater() error {
-	logrus.Info("dummy: BlockHotwater")
-	return nil
-}
-func (ts *Dummy) AllowHotwater() error {
-	logrus.Info("dummy: AllowHotwater")
+func (ts *Dummy) AllowHotwater(b bool) error {
+	logrus.Info("dummy: AllowHotwater", b)
 	return nil
 }
 
-func (ts *Dummy) BoostHotwater() error {
+func (ts *Dummy) BoostHotwater(b bool) error {
 	// TODO
-	logrus.Info("dummy: BoostHotwater")
+	logrus.Info("dummy: BoostHotwater", b)
 
 	return nil
 

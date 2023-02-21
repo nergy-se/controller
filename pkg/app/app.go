@@ -27,7 +27,7 @@ var httpClient = &http.Client{
 
 type App struct {
 	wg          *sync.WaitGroup
-	config      *v1config.Config
+	schedule    *v1config.Config
 	cloudConfig *v1config.CloudConfig
 	cliConfig   *v1config.CliConfig
 
@@ -38,7 +38,7 @@ func New(config *v1config.CliConfig) *App {
 	return &App{
 		wg:        &sync.WaitGroup{},
 		cliConfig: config,
-		config:    v1config.NewConfig(),
+		schedule:  v1config.NewConfig(),
 	}
 }
 
@@ -113,9 +113,12 @@ func (a *App) controllerLoop(ctx context.Context) {
 
 		case <-timer.C:
 			timer.Reset(nextDelay())
-			//TODO write to heatpump if needed
-			// a.updateSchedule()
-			logrus.Info("write to heatpump")
+			err := a.reconcile()
+			if err != nil {
+				logrus.Error(err)
+				continue
+			}
+
 		case <-scheduleTicker.C:
 			err := a.updateSchedule()
 			if err != nil {
@@ -127,6 +130,30 @@ func (a *App) controllerLoop(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// makes sure heatpump are in desired state
+func (a *App) reconcile() error {
+	logrus.Info("reconcile heatpump")
+	current := a.schedule.Current()
+
+	err := a.controller.AllowHeating(current.Heating)
+	if err != nil {
+		return err
+	}
+
+	// TODO make it a config to chose if we want to block both hotwater and heating?
+	err = a.controller.AllowHotwater(current.Heating)
+	if err != nil {
+		return err
+	}
+
+	err = a.controller.BoostHotwater(current.Hotwater)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (a *App) sendMetrics() error {
@@ -150,8 +177,8 @@ func (a *App) updateSchedule() error {
 	err := a.do("api/controller/schedule-v1", "GET", &schedule, nil)
 	logrus.Debugf("fetched schedule: %#v ", schedule)
 
-	a.config.MergeSchedule(schedule)
-	a.config.ClearOld()
+	a.schedule.MergeSchedule(schedule)
+	a.schedule.ClearOld()
 	return err
 }
 

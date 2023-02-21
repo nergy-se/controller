@@ -60,21 +60,16 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	*/
 	return s, nil
 }
-func (ts *Thermiagenesis) BlockHeating() error {
-	return nil
-}
-func (ts *Thermiagenesis) AllowHeating() error {
+
+func (ts *Thermiagenesis) AllowHeating(b bool) error {
 	return nil
 }
 
-func (ts *Thermiagenesis) BlockHotwater() error {
-	return nil
-}
-func (ts *Thermiagenesis) AllowHotwater() error {
+func (ts *Thermiagenesis) AllowHotwater(b bool) error {
 	return nil
 }
 
-func (ts *Thermiagenesis) BoostHotwater() error {
+func (ts *Thermiagenesis) BoostHotwater(b bool) error {
 	// TODO
 	start := 555
 	stop := 65
