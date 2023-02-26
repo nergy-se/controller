@@ -1,18 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/goburrow/modbus"
-	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	v1config "github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/api/v1/types"
 	"github.com/nergy-se/controller/pkg/controller"
@@ -161,13 +159,14 @@ func (a *App) sendMetrics() error {
 	if err != nil {
 		return err
 	}
-	p := influxdb2.NewPoint("controller_state",
-		map[string]string{"controllerId": a.cloudConfig.ControllerId},
-		state.Map(),
-		time.Now())
+
+	body, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
 
 	logrus.Debug("send metrics")
-	return a.do("api/controller/metrics-v1", "POST", nil, strings.NewReader(write.PointToLineProtocol(p, time.Nanosecond)))
+	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body))
 }
 
 func (a *App) updateSchedule() error {

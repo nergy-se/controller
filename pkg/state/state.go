@@ -8,22 +8,22 @@ const (
 type ValveState bool
 
 type State struct {
-	Indoor             *float64
-	Outdoor            *float64
-	HeatCarrierForward *float64
-	HeatCarrierReturn  *float64
-	RadiatorForward    *float64
-	RadiatorReturn     *float64 // FINNS DENNA ENS?
-	BrineIn            *float64
-	BrineOut           *float64
-	HotGasCompressor   *float64
-	WarmWater          *float64
-	Compressor         *bool
-	Alarm              *bool
-	SwitchValve        *bool
-	PumpBrine          *bool
-	PumpHeat           *bool
-	PumpRadiator       *bool
+	Indoor             *float64 `json:"indoor,omitempty"`
+	Outdoor            *float64 `json:"outdoor,omitempty"`
+	HeatCarrierForward *float64 `json:"heatCarrierForward,omitempty"`
+	HeatCarrierReturn  *float64 `json:"heatCarrierReturn,omitempty"`
+	RadiatorForward    *float64 `json:"radiatorForward,omitempty"`
+	RadiatorReturn     *float64 `json:"radiatorReturn,omitempty"` // FINNS DENNA ENS?
+	BrineIn            *float64 `json:"brineIn,omitempty"`
+	BrineOut           *float64 `json:"brineOut,omitempty"`
+	HotGasCompressor   *float64 `json:"hotGasCompressor,omitempty"`
+	WarmWater          *float64 `json:"warmWater,omitempty"`
+	Compressor         *bool    `json:"compressor,omitempty"`
+	Alarm              *bool    `json:"alarm,omitempty"`
+	SwitchValve        *bool    `json:"switchValve,omitempty"`
+	PumpBrine          *bool    `json:"pumpBrine,omitempty"`
+	PumpHeat           *bool    `json:"pumpHeat,omitempty"`
+	PumpRadiator       *bool    `json:"pumpRadiator,omitempty"`
 }
 
 func (s State) Map() map[string]interface{} {
