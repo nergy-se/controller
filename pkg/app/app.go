@@ -135,6 +135,10 @@ func (a *App) reconcile() error {
 	logrus.Info("reconcile heatpump")
 	current := a.schedule.Current()
 
+	if current == nil {
+		return fmt.Errorf("found no curent schedule")
+	}
+
 	err := a.controller.AllowHeating(current.Heating)
 	if err != nil {
 		return err
