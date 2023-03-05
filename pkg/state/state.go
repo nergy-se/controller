@@ -18,7 +18,7 @@ type State struct {
 	BrineOut           *float64 `json:"brineOut,omitempty"`
 	HotGasCompressor   *float64 `json:"hotGasCompressor,omitempty"`
 	WarmWater          *float64 `json:"warmWater,omitempty"`
-	Compressor         *bool    `json:"compressor,omitempty"`
+	Compressor         *float64 `json:"compressor,omitempty"`
 	Alarm              *bool    `json:"alarm,omitempty"`
 	SwitchValve        *bool    `json:"switchValve,omitempty"`
 	PumpBrine          *bool    `json:"pumpBrine,omitempty"`
@@ -59,7 +59,7 @@ func (s State) Map() map[string]interface{} {
 		m["warmWater"] = *s.WarmWater
 	}
 	if s.Compressor != nil {
-		m["compressor"] = boolToInt(*s.Compressor)
+		m["compressor"] = *s.Compressor
 	}
 	if s.Alarm != nil {
 		m["alarm"] = boolToInt(*s.Alarm)

@@ -27,7 +27,7 @@ func (ts *Dummy) State() (*state.State, error) {
 		BrineOut:           Pointer(2.2),
 		HotGasCompressor:   nil,
 		WarmWater:          nil,
-		Compressor:         Pointer(true),
+		Compressor:         Pointer(100.0),
 		Alarm:              nil,
 		SwitchValve:        nil,
 		PumpBrine:          nil,
