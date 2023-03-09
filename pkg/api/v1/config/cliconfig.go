@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -26,7 +27,7 @@ func (c *CliConfig) Token() string {
 
 func (c *CliConfig) SetToken(t string) {
 	c.mutex.Lock()
-	c.APIToken = t
+	c.APIToken = strings.TrimSpace(t)
 	c.mutex.Unlock()
 }
 func (c *CliConfig) PersistToken() error {
