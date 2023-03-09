@@ -53,6 +53,10 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
+	s.Indoor, err = scale10itof(ts.readInputRegister(121)) // Room temperature sensor scale 10
+	if err != nil {
+		return s, err
+	}
 
 	s.WarmWater, err = scale100itof(ts.readInputRegister(17)) // 17 tank Tap water weighted temperature scale 100
 	if err != nil {
@@ -66,11 +70,32 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
-	asdf, err := scale100itof(ts.readInputRegister(12)) // System supply line temperature scale 100 vad är detta?! visar bara 200.0 så funkar nog inte? visar bara 200.0 så funkar nog inte?
+	s.RadiatorForward, err = scale100itof(ts.readInputRegister(12)) // System supply line temperature scale 100 vad är detta?! visar bara 200.0 så inte inkopplad?
+	// https://github.com/CJNE/thermiagenesis/issues/157#issuecomment-1250896092
 	if err != nil {
 		return s, err
 	}
-	fmt.Println("System supply line temperature: ", asdf)
+	s.RadiatorReturn, err = scale100itof(ts.readInputRegister(27)) // input reg 27 System return line temperature. visar 0 hos per
+	if err != nil {
+		return s, err
+	}
+
+	s.HeatCarrierForward, err = scale100itof(ts.readInputRegister(9)) // input reg 9 Condenser out temperature som visar 47.26 kan vara detta? HeatCarrierForward!
+	if err != nil {
+		return s, err
+	}
+	s.HeatCarrierReturn, err = scale100itof(ts.readInputRegister(8)) // input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
+	if err != nil {
+		return s, err
+	}
+	s.PumpBrine, err = scale100itof(ts.readInputRegister(44)) // input reg 44 Brine circulation pump speed (%) just nu 66.81 PumpBrine
+	if err != nil {
+		return s, err
+	}
+	s.PumpHeat, err = scale100itof(ts.readInputRegister(39)) // input reg 39 Condenser circulation pump speed (%) just nu 60.1 PumpHeat
+	if err != nil {
+		return s, err
+	}
 
 	// input reg 147 Desired temperature distribution circuit Mix valve 1 verkar vara nuvarande uträknade börvärde? tex 38.08
 	// input reg 7 Discharge pipe temperature verkar vara hetgasen? just nu 81.12
@@ -78,28 +103,6 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	//  1: Manual operation, 2: Defrost, 3: Hot water, 4: Heat, 5: Cool, 6: Pool, 7: Anti legionella, 98: Standby 99: No demand 100: OFF
 	// input reg 18 System supply line calculated set point just nu 47.18
 
-	// https://github.com/CJNE/thermiagenesis/issues/157#issuecomment-1250896092
-	// input reg 12 System supply line temperature visar 200 hos per
-	// input reg 27 System return line temperature. visar 0 hos per
-	// input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
-	// input reg 9 Condenser out temperature som visar 47.26 kan vara detta? HeatCarrierForward!
-
-	// input reg 44 Brine circulation pump speed (%) just nu 66.81 PumpBrine
-	// input reg 39 Condenser circulation pump speed (%) just nu 60.1 PumpHeat
-
-	/*
-		start, err := ts.readHoldingRegister(22)
-		if err != nil {
-			return
-		}
-		start /= 100
-
-		stop, err := ts.readHoldingRegister(23)
-		if err != nil {
-			return
-		}
-		stop /= 100
-	*/
 	return s, nil
 }
 
@@ -133,6 +136,10 @@ func (ts *Thermiagenesis) BoostHotwater(b bool) error {
 
 func scale100itof(i int, err error) (*float64, error) {
 	f := float64(i) / 100.0
+	return &f, err
+}
+func scale10itof(i int, err error) (*float64, error) {
+	f := float64(i) / 10.0
 	return &f, err
 }
 

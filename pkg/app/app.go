@@ -57,6 +57,12 @@ func (a *App) Start(ctx context.Context) error {
 }
 
 func (a *App) setupConfig() error {
+
+	err := a.cliConfig.LoadToken()
+	if err != nil {
+		return err
+	}
+
 	if a.cliConfig.ControllerType != "" && a.cliConfig.Address != "" {
 		logrus.Infof("using controller %s specified in cli config", a.cliConfig.ControllerType)
 		a.cloudConfig = &v1config.CloudConfig{
@@ -92,41 +98,55 @@ func (a *App) controllerLoop(ctx context.Context) {
 	defer a.wg.Done()
 	delay := nextDelay()
 	timer := time.NewTimer(delay)
-	err := a.updateSchedule()
-	if err != nil {
-		logrus.Error(err)
-	}
+	a.doUpdateSchedule()
+	a.doReconcile()
+	a.doSendMetrics()
 
 	scheduleTicker := time.NewTicker(time.Hour * 6)
+	refreshToken := time.NewTicker(time.Hour * 24)
 	metricsTicker := time.NewTicker(time.Second * 30)
 	logrus.Debug("scheduling first run in", delay)
 	for {
 		select {
 		case <-metricsTicker.C:
-			err := a.sendMetrics()
-			if err != nil {
-				logrus.Error(err)
-				continue
-			}
-
+			a.doSendMetrics()
 		case <-timer.C:
 			timer.Reset(nextDelay())
-			err := a.reconcile()
-			if err != nil {
-				logrus.Error(err)
-				continue
-			}
-
+			a.doReconcile()
 		case <-scheduleTicker.C:
-			err := a.updateSchedule()
-			if err != nil {
-				logrus.Error(err)
-				continue
-			}
-
+			a.doUpdateSchedule()
+		case <-refreshToken.C:
+			a.doRefreshToken()
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+func (a *App) doRefreshToken() {
+	err := a.refreshToken()
+	if err != nil {
+		logrus.Errorf("error refreshToken: %s", err.Error())
+	}
+}
+
+func (a *App) doSendMetrics() {
+	err := a.sendMetrics()
+	if err != nil {
+		logrus.Errorf("error sendMetrics: %s", err.Error())
+	}
+}
+
+func (a *App) doReconcile() {
+	err := a.reconcile()
+	if err != nil {
+		logrus.Errorf("error reconcile: %s", err.Error())
+	}
+}
+func (a *App) doUpdateSchedule() {
+	err := a.updateSchedule()
+	if err != nil {
+		logrus.Errorf("error updateSchedule: %s", err.Error())
 	}
 }
 
@@ -150,12 +170,7 @@ func (a *App) reconcile() error {
 		return err
 	}
 
-	err = a.controller.BoostHotwater(current.Hotwater)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return a.controller.BoostHotwater(current.Hotwater)
 }
 
 func (a *App) sendMetrics() error {
@@ -171,6 +186,19 @@ func (a *App) sendMetrics() error {
 
 	logrus.Debug("send metrics")
 	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body))
+}
+
+func (a *App) refreshToken() error {
+	logrus.Debug("refresh token")
+	resp := struct{ Token string }{}
+	err := a.do("api/token-v1", "POST", resp, nil)
+	if err != nil {
+		return err
+	}
+
+	a.cliConfig.SetToken(resp.Token)
+	logrus.Debug("refresh token done")
+	return a.cliConfig.PersistToken()
 }
 
 func (a *App) updateSchedule() error {

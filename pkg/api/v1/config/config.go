@@ -8,16 +8,6 @@ import (
 	"github.com/nergy-se/controller/pkg/api/v1/types"
 )
 
-type CliConfig struct {
-	Server   string `default:"https://nergy.se"`
-	APIToken string
-
-	ControllerType string
-	Address        string
-
-	LogLevel string `default:"info"`
-}
-
 type HourConfig struct {
 	Time     time.Time `json:"time"`
 	Hotwater bool      `json:"hotwater"`
