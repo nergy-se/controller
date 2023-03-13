@@ -6,6 +6,7 @@ import (
 	"github.com/goburrow/modbus"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/state"
+	"github.com/sirupsen/logrus"
 )
 
 type Thermiagenesis struct {
@@ -120,6 +121,8 @@ func (ts *Thermiagenesis) BoostHotwater(b bool) error {
 		start = 50
 		stop = 55
 	}
+
+	logrus.WithFields(logrus.Fields{"start": start, "stop": stop}).Debugf("thermiagenesis: boosthotwater")
 	_, err := ts.client.WriteSingleRegister(22, uint16(start*100)) // 100 = 1c
 	if err != nil {
 		return fmt.Errorf("error writeTemps 22: %w", err)

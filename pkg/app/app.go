@@ -152,7 +152,7 @@ func (a *App) doUpdateSchedule() {
 
 // makes sure heatpump are in desired state
 func (a *App) reconcile() error {
-	logrus.Info("reconcile heatpump")
+	logrus.Debug("reconcile heatpump")
 	current := a.schedule.Current()
 
 	if current == nil {
@@ -190,7 +190,7 @@ func (a *App) sendMetrics() error {
 
 func (a *App) refreshToken() error {
 	logrus.Debug("refresh token")
-	resp := struct{ Token string }{}
+	resp := &struct{ Token string }{}
 	err := a.do("api/token-v1", "POST", resp, nil)
 	if err != nil {
 		return err
@@ -241,7 +241,7 @@ func (a *App) do(u string, method string, dst any, body io.Reader) error {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("error fetching controller config StatusCode: %d, body: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("error fetching %s StatusCode: %d, body: %s", u, resp.StatusCode, string(body))
 	}
 
 	if dst == nil {
