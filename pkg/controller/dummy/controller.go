@@ -1,6 +1,8 @@
 package dummy
 
 import (
+	"math/rand"
+
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
@@ -16,6 +18,7 @@ func Pointer[K any](val K) *K {
 }
 
 func (ts *Dummy) State() (*state.State, error) {
+	compressor := float64(rand.Intn(100-20) + 20)
 	s := &state.State{
 		Indoor:             Pointer(21.1),
 		Outdoor:            Pointer(11.1),
@@ -27,7 +30,7 @@ func (ts *Dummy) State() (*state.State, error) {
 		BrineOut:           Pointer(2.2),
 		HotGasCompressor:   nil,
 		WarmWater:          nil,
-		Compressor:         Pointer(100.0),
+		Compressor:         &compressor,
 		Alarm:              nil,
 		SwitchValve:        nil,
 		PumpBrine:          nil,

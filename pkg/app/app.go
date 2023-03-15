@@ -184,7 +184,7 @@ func (a *App) sendMetrics() error {
 		return err
 	}
 
-	logrus.Debug("send metrics")
+	logrus.Trace("send metrics")
 	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body))
 }
 
