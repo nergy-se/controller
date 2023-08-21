@@ -8,22 +8,26 @@ const (
 type ValveState bool
 
 type State struct {
-	Indoor             *float64 `json:"indoor,omitempty"`
-	Outdoor            *float64 `json:"outdoor,omitempty"`
-	HeatCarrierForward *float64 `json:"heatCarrierForward,omitempty"`
-	HeatCarrierReturn  *float64 `json:"heatCarrierReturn,omitempty"`
-	RadiatorForward    *float64 `json:"radiatorForward,omitempty"`
-	RadiatorReturn     *float64 `json:"radiatorReturn,omitempty"` // FINNS DENNA ENS?
-	BrineIn            *float64 `json:"brineIn,omitempty"`
-	BrineOut           *float64 `json:"brineOut,omitempty"`
-	HotGasCompressor   *float64 `json:"hotGasCompressor,omitempty"`
-	WarmWater          *float64 `json:"warmWater,omitempty"`
-	Compressor         *float64 `json:"compressor,omitempty"`
-	Alarm              *bool    `json:"alarm,omitempty"`
-	SwitchValve        *bool    `json:"switchValve,omitempty"`
-	PumpBrine          *float64 `json:"pumpBrine,omitempty"`
-	PumpHeat           *float64 `json:"pumpHeat,omitempty"`
-	PumpRadiator       *float64 `json:"pumpRadiator,omitempty"`
+	Indoor                   *float64 `json:"indoor,omitempty"`
+	Outdoor                  *float64 `json:"outdoor,omitempty"`
+	HeatCarrierForward       *float64 `json:"heatCarrierForward,omitempty"`
+	HeatCarrierReturn        *float64 `json:"heatCarrierReturn,omitempty"`
+	RadiatorForward          *float64 `json:"radiatorForward,omitempty"`
+	RadiatorReturn           *float64 `json:"radiatorReturn,omitempty"` // FINNS DENNA ENS?
+	BrineIn                  *float64 `json:"brineIn,omitempty"`
+	BrineOut                 *float64 `json:"brineOut,omitempty"`
+	HotGasCompressor         *float64 `json:"hotGasCompressor,omitempty"`
+	WarmWater                *float64 `json:"warmWater,omitempty"`
+	Compressor               *float64 `json:"compressor,omitempty"`
+	Alarm                    *bool    `json:"alarm,omitempty"`
+	SwitchValve              *bool    `json:"switchValve,omitempty"`
+	PumpBrine                *float64 `json:"pumpBrine,omitempty"`
+	PumpHeat                 *float64 `json:"pumpHeat,omitempty"`
+	PumpRadiator             *float64 `json:"pumpRadiator,omitempty"`
+	SuperHeatTemperature     *float64 `json:"superHeatTemperature,omitempty"`
+	SuctionGasTemperature    *float64 `json:"suctionGasTemperature,omitempty"`
+	LowPressureSdePressure   *float64 `json:"lowPressureSdePressure,omitempty"`
+	HighPressureSidePressure *float64 `json:"highPressureSidePressure,omitempty"`
 }
 
 func (s State) Map() map[string]interface{} {
@@ -75,6 +79,18 @@ func (s State) Map() map[string]interface{} {
 	}
 	if s.PumpRadiator != nil {
 		m["pumpRadiator"] = *s.PumpRadiator
+	}
+	if s.SuperHeatTemperature != nil {
+		m["superHeatTemperature"] = *s.SuperHeatTemperature
+	}
+	if s.SuctionGasTemperature != nil {
+		m["suctionGasTemperature"] = *s.SuctionGasTemperature
+	}
+	if s.LowPressureSdePressure != nil {
+		m["lowPressureSdePressure"] = *s.LowPressureSdePressure
+	}
+	if s.HighPressureSidePressure != nil {
+		m["highPressureSidePressure"] = *s.HighPressureSidePressure
 	}
 
 	return m

@@ -97,11 +97,33 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 		return s, err
 	}
 
+	s.HotGasCompressor, err = controller.Scale100itof(ts.readInputRegister(7)) // input reg 7 Discharge pipe temperature
+	if err != nil {
+		return s, err
+	}
+	s.SuperHeatTemperature, err = controller.Scale100itof(ts.readInputRegister(125)) // input reg 125 Superheat temperature
+	if err != nil {
+		return s, err
+	}
+	s.SuctionGasTemperature, err = controller.Scale100itof(ts.readInputRegister(130)) // input reg 130 Suction gas temperature
+	if err != nil {
+		return s, err
+	}
+	s.LowPressureSdePressure, err = controller.Scale100itof(ts.readInputRegister(127)) // input reg 127 Low pressure side, pressure (bar(g))
+	if err != nil {
+		return s, err
+	}
+	s.HighPressureSidePressure, err = controller.Scale100itof(ts.readInputRegister(128)) // input reg 128 High pressure side, pressure (bar(g))
+	if err != nil {
+		return s, err
+	}
+
 	// input reg 147 Desired temperature distribution circuit Mix valve 1 verkar vara nuvarande uträknade börvärde? tex 38.08
-	// input reg 7 Discharge pipe temperature verkar vara hetgasen? just nu 81.12
 	// input reg 1 Currently running: First prioritised demand *1
 	//  1: Manual operation, 2: Defrost, 3: Hot water, 4: Heat, 5: Cool, 6: Pool, 7: Anti legionella, 98: Standby 99: No demand 100: OFF
 	// input reg 18 System supply line calculated set point just nu 47.18
+	// write single coil(5) enable heat 9
+	// write single coil(5) enable tap water 8
 
 	return s, nil
 }
