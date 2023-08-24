@@ -87,7 +87,7 @@ func (s State) Map() map[string]interface{} {
 		m["suctionGasTemperature"] = *s.SuctionGasTemperature
 	}
 	if s.LowPressureSidePressure != nil {
-		m["lowPressureSdePressure"] = *s.LowPressureSidePressure
+		m["lowPressureSidePressure"] = *s.LowPressureSidePressure
 	}
 	if s.HighPressureSidePressure != nil {
 		m["highPressureSidePressure"] = *s.HighPressureSidePressure
