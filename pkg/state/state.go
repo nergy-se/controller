@@ -26,7 +26,7 @@ type State struct {
 	PumpRadiator             *float64 `json:"pumpRadiator,omitempty"`
 	SuperHeatTemperature     *float64 `json:"superHeatTemperature,omitempty"`
 	SuctionGasTemperature    *float64 `json:"suctionGasTemperature,omitempty"`
-	LowPressureSdePressure   *float64 `json:"lowPressureSdePressure,omitempty"`
+	LowPressureSidePressure  *float64 `json:"lowPressureSidePressure,omitempty"`
 	HighPressureSidePressure *float64 `json:"highPressureSidePressure,omitempty"`
 }
 
@@ -86,8 +86,8 @@ func (s State) Map() map[string]interface{} {
 	if s.SuctionGasTemperature != nil {
 		m["suctionGasTemperature"] = *s.SuctionGasTemperature
 	}
-	if s.LowPressureSdePressure != nil {
-		m["lowPressureSdePressure"] = *s.LowPressureSdePressure
+	if s.LowPressureSidePressure != nil {
+		m["lowPressureSdePressure"] = *s.LowPressureSidePressure
 	}
 	if s.HighPressureSidePressure != nil {
 		m["highPressureSidePressure"] = *s.HighPressureSidePressure

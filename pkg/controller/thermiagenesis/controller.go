@@ -109,7 +109,7 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
-	s.LowPressureSdePressure, err = controller.Scale100itof(ts.readInputRegister(127)) // input reg 127 Low pressure side, pressure (bar(g))
+	s.LowPressureSidePressure, err = controller.Scale100itof(ts.readInputRegister(127)) // input reg 127 Low pressure side, pressure (bar(g))
 	if err != nil {
 		return s, err
 	}
