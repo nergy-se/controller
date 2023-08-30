@@ -58,3 +58,7 @@ func (ts *Dummy) BoostHotwater(b bool) error {
 	return nil
 
 }
+
+func (ts *Dummy) Alarms() ([]string, error) {
+	return []string{}, nil
+}

@@ -23,6 +23,36 @@ var httpClient = &http.Client{
 	Timeout: time.Second * 30,
 }
 
+type activeAlarms struct {
+	activeAlarms []string
+	sync.RWMutex
+}
+
+// Add adds string to alarm list and returns true if it was added. returns false if it already exists.
+func (a *activeAlarms) Add(alarm string) bool {
+	a.Lock()
+	defer a.Unlock()
+	for _, activeAlarm := range a.activeAlarms {
+		if activeAlarm == alarm {
+			return false
+		}
+	}
+
+	a.activeAlarms = append(a.activeAlarms, alarm)
+	return true
+}
+
+func (a *activeAlarms) Clear() bool {
+	hasActive := false
+	a.Lock()
+	if len(a.activeAlarms) > 0 {
+		hasActive = true
+		a.activeAlarms = nil
+	}
+	a.Unlock()
+	return hasActive
+}
+
 type App struct {
 	wg          *sync.WaitGroup
 	schedule    *v1config.Config
@@ -30,6 +60,8 @@ type App struct {
 	cliConfig   *v1config.CliConfig
 
 	controller controller.Controller
+
+	activeAlarms *activeAlarms
 }
 
 func New(config *v1config.CliConfig) *App {
@@ -110,6 +142,7 @@ func (a *App) controllerLoop(ctx context.Context) {
 		select {
 		case <-metricsTicker.C:
 			a.doSendMetrics()
+			a.doSendAlarms()
 		case <-timer.C:
 			timer.Reset(nextDelay())
 			a.doReconcile()
@@ -134,6 +167,12 @@ func (a *App) doSendMetrics() {
 	err := a.sendMetrics()
 	if err != nil {
 		logrus.Errorf("error sendMetrics: %s", err.Error())
+	}
+}
+func (a *App) doSendAlarms() {
+	err := a.sendAlarms()
+	if err != nil {
+		logrus.Errorf("error sendAlarms: %s", err.Error())
 	}
 }
 
@@ -184,12 +223,53 @@ func (a *App) sendMetrics() error {
 		return err
 	}
 
-	logrus.Trace("send metrics")
 	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body))
 }
 
+func (a *App) sendAlarms() error {
+	alarms, err := a.controller.Alarms()
+	if err != nil {
+		return err
+	}
+
+	if len(alarms) == 0 {
+		hadActive := a.activeAlarms.Clear()
+		if hadActive {
+			return a.do("api/controller/alarms-v1", "DELETE", nil, nil)
+		}
+		return nil
+	}
+	// add to list of active alarms
+	// check if in list of active alarms
+	for _, alarm := range alarms {
+
+		newAlarm := a.activeAlarms.Add(alarm)
+		if !newAlarm {
+			continue
+		}
+
+		body, err := json.Marshal(alarm)
+		if err != nil {
+			logrus.Error(err)
+			continue
+		}
+
+		err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body))
+		if err != nil {
+			logrus.Error(err)
+		}
+
+	}
+
+	body, err := json.Marshal(alarms)
+	if err != nil {
+		return err
+	}
+
+	return a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body))
+}
+
 func (a *App) refreshToken() error {
-	logrus.Debug("refresh token")
 	resp := &struct{ Token string }{}
 	err := a.do("api/token-v1", "POST", resp, nil)
 	if err != nil {
@@ -197,16 +277,12 @@ func (a *App) refreshToken() error {
 	}
 
 	a.cliConfig.SetToken(resp.Token)
-	logrus.Debug("refresh token done")
 	return a.cliConfig.PersistToken()
 }
 
 func (a *App) updateSchedule() error {
-	logrus.Debug("fetching schedule")
-
 	schedule := make(v1config.Schedule)
 	err := a.do("api/controller/schedule-v1", "GET", &schedule, nil)
-	logrus.Debugf("fetched schedule: %#v ", schedule)
 
 	a.schedule.MergeSchedule(schedule)
 	a.schedule.ClearOld()
@@ -216,11 +292,11 @@ func (a *App) updateSchedule() error {
 func (a *App) fetchConfig() (*v1config.CloudConfig, error) {
 	response := &v1config.CloudConfig{}
 	err := a.do("api/controller/config-v1", "GET", response, nil)
-	logrus.Debugf("fetched config: %#v ", response)
 	return response, err
 }
 
 func (a *App) do(u string, method string, dst any, body io.Reader) error {
+	logrus.Debugf("%s to %s", method, u)
 	u = fmt.Sprintf("%s/%s", a.cliConfig.Server, u)
 	req, err := http.NewRequest(method, u, body)
 	if err != nil {

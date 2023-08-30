@@ -17,6 +17,9 @@ type Controller interface {
 
 	// fetch state. Used for metrics to cloud
 	State() (*state.State, error)
+
+	// list active alarms
+	Alarms() ([]string, error)
 }
 
 func Scale100itof(i int, err error) (*float64, error) {
