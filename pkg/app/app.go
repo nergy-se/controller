@@ -66,9 +66,10 @@ type App struct {
 
 func New(config *v1config.CliConfig) *App {
 	return &App{
-		wg:        &sync.WaitGroup{},
-		cliConfig: config,
-		schedule:  v1config.NewConfig(),
+		wg:           &sync.WaitGroup{},
+		cliConfig:    config,
+		schedule:     v1config.NewConfig(),
+		activeAlarms: &activeAlarms{},
 	}
 }
 
