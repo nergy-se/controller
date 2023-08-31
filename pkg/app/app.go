@@ -262,12 +262,7 @@ func (a *App) sendAlarms() error {
 
 	}
 
-	body, err := json.Marshal(alarms)
-	if err != nil {
-		return err
-	}
-
-	return a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body))
+	return nil
 }
 
 func (a *App) refreshToken() error {
@@ -318,7 +313,7 @@ func (a *App) do(u string, method string, dst any, body io.Reader) error {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("error fetching %s StatusCode: %d, body: %s", u, resp.StatusCode, string(body))
+		return fmt.Errorf("error %s %s StatusCode: %d, body: %s", method, u, resp.StatusCode, string(body))
 	}
 
 	if dst == nil {

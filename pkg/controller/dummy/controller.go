@@ -1,17 +1,52 @@
 package dummy
 
 import (
+	"fmt"
 	"math/rand"
+	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
 
 type Dummy struct {
+	alarms []string
+	sync.Mutex
 }
 
 func New() *Dummy {
-	return &Dummy{}
+	dummy := &Dummy{}
+	http.HandleFunc("/alarm", func(w http.ResponseWriter, req *http.Request) {
+		msg := req.URL.Query().Get("message")
+		if msg == "" {
+			dummy.Lock()
+			fmt.Fprintf(w, "active alarms: %s", strings.Join(dummy.alarms, "|"))
+			dummy.Unlock()
+			return
+		}
+		logrus.Infof("adding alarm with %s", msg)
+		dummy.Lock()
+		dummy.alarms = append(dummy.alarms, msg)
+		dummy.Unlock()
+		fmt.Fprintf(w, "adding alarm with %s\n", msg)
+	})
+	http.HandleFunc("/resetalarms", func(w http.ResponseWriter, req *http.Request) {
+		dummy.Lock()
+		dummy.alarms = nil
+		dummy.Unlock()
+		fmt.Fprintf(w, "alarms reset\n")
+	})
+
+	go func() {
+		err := http.ListenAndServe(":8888", nil)
+		if err != nil {
+			logrus.Error(err)
+		}
+	}()
+
+	return dummy
 }
 func Pointer[K any](val K) *K {
 	return &val
@@ -60,5 +95,7 @@ func (ts *Dummy) BoostHotwater(b bool) error {
 }
 
 func (ts *Dummy) Alarms() ([]string, error) {
-	return []string{}, nil
+	ts.Lock()
+	defer ts.Unlock()
+	return ts.alarms, nil
 }
