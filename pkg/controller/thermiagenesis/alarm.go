@@ -1,6 +1,11 @@
 package thermiagenesis
 
-import "github.com/sirupsen/logrus"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/sirupsen/logrus"
+)
 
 var alarmsMap = map[int]string{
 	0:   "Alarm active, Class: A",
@@ -65,9 +70,6 @@ var alarmsMap = map[int]string{
 	74:  "Temperature room sensor alarm",
 	75:  "Inverter unit communication alarm",
 	76:  "Pool return line sensor alarm",
-	77:  "External stop for pool, read only",
-	78:  "External start brine pump, read only",
-	79:  "External relay for brine/ground water pump.",
 	81:  "Tap water end tank sensor alarm",
 	83:  "Genesis secondary unit alarm - this specific secondary unit can't communicate with its primary unit",
 	84:  "Primary unit alarm - the primary has detected other primary units on the same network with a network mask that is allowing conflict. Change network settings in order to avoid problem. For instance change port number on the primary and its secondary unit.",
@@ -77,14 +79,17 @@ var alarmsMap = map[int]string{
 }
 
 func (ts *Thermiagenesis) Alarms() ([]string, error) {
-	b, err := ts.client.ReadDiscreteInputs(0, 203)
-	if err != nil {
-		return nil, err
-	}
 
 	errs := make([]string, 0)
 	for i, desc := range alarmsMap {
-		val := b[i]
+		b, err := ts.client.ReadDiscreteInputs(uint16(i), 1)
+		if err != nil {
+			if strings.Contains(err.Error(), "illegal data address") {
+				continue // skip if the registry does not exists in pump firmware.
+			}
+			return errs, fmt.Errorf("error reading input %d: %w", i, err)
+		}
+		val := b[0]
 		if val == 0 {
 			continue
 		}
