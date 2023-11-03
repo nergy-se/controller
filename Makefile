@@ -6,3 +6,6 @@ build:
 
 run: 
 	gow run ./cmd/nergycontroller
+
+test:
+	go test ./...

@@ -15,7 +15,9 @@ import (
 	"github.com/nergy-se/controller/pkg/api/v1/types"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/controller/dummy"
+	"github.com/nergy-se/controller/pkg/controller/hogforsgst"
 	"github.com/nergy-se/controller/pkg/controller/thermiagenesis"
+	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/sirupsen/logrus"
 )
 
@@ -116,7 +118,12 @@ func (a *App) setupController() error {
 	switch a.cloudConfig.HeatControlType {
 	case types.HeatControlTypeThermiaGenesis:
 		client := modbus.TCPClient(a.cloudConfig.Address)
-		a.controller = thermiagenesis.New(client)
+		a.controller = thermiagenesis.New(modbusclient.New(client), false)
+
+	case types.HeatControlTypeHogforsGST:
+		client := modbus.TCPClient(a.cloudConfig.Address)
+		a.controller = hogforsgst.New(modbusclient.New(client), a.cloudConfig.DistrictHeatingPrice)
+
 	case types.HeatControlTypeDummy:
 		a.controller = dummy.New()
 	}
@@ -196,8 +203,10 @@ func (a *App) reconcile() error {
 	current := a.schedule.Current()
 
 	if current == nil {
-		return fmt.Errorf("found no curent schedule")
+		return fmt.Errorf("no current schedule")
 	}
+
+	//TODO call Reconcile on controller Interface and if that method is implemented and returns true, error we just skip the below?
 
 	err := a.controller.AllowHeating(current.Heating)
 	if err != nil {
@@ -205,12 +214,12 @@ func (a *App) reconcile() error {
 	}
 
 	// TODO make it a config to chose if we want to block both hotwater and heating?
-	err = a.controller.AllowHotwater(current.Heating)
+	err = a.controller.AllowHotwater(current.Hotwater)
 	if err != nil {
 		return err
 	}
 
-	return a.controller.BoostHotwater(current.Hotwater)
+	return a.controller.BoostHotwater(current.HotwaterForce)
 }
 
 func (a *App) sendMetrics() error {
@@ -240,10 +249,7 @@ func (a *App) sendAlarms() error {
 		}
 		return nil
 	}
-	// add to list of active alarms
-	// check if in list of active alarms
 	for _, alarm := range alarms {
-
 		newAlarm := a.activeAlarms.Add(alarm)
 		if !newAlarm {
 			continue
@@ -261,7 +267,6 @@ func (a *App) sendAlarms() error {
 		}
 
 	}
-
 	return nil
 }
 

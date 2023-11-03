@@ -82,7 +82,7 @@ func (ts *Thermiagenesis) Alarms() ([]string, error) {
 
 	errs := make([]string, 0)
 	for i, desc := range alarmsMap {
-		b, err := ts.client.ReadDiscreteInputs(uint16(i), 1)
+		b, err := ts.client.ReadDiscreteInput(uint16(i))
 		if err != nil {
 			if strings.Contains(err.Error(), "illegal data address") {
 				continue // skip if the registry does not exists in pump firmware.

@@ -3,19 +3,21 @@ package thermiagenesis
 import (
 	"fmt"
 
-	"github.com/goburrow/modbus"
 	"github.com/nergy-se/controller/pkg/controller"
+	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
 
 type Thermiagenesis struct {
-	client modbus.Client
+	client   modbusclient.Client
+	readonly bool
 }
 
-func New(client modbus.Client) *Thermiagenesis {
+func New(client modbusclient.Client, readonly bool) *Thermiagenesis {
 	return &Thermiagenesis{
-		client: client,
+		client:   client,
+		readonly: readonly,
 	}
 }
 
@@ -40,80 +42,80 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	}
 	var err error
 
-	s.BrineIn, err = controller.Scale100itof(ts.readInputRegister(10)) // 10 brine in scale 100
+	s.BrineIn, err = controller.Scale100itof(ts.client.ReadInputRegister(10)) // 10 brine in scale 100
 	if err != nil {
 		return s, err
 	}
 
-	s.BrineOut, err = controller.Scale100itof(ts.readInputRegister(11)) // 11 brine out scale 100
+	s.BrineOut, err = controller.Scale100itof(ts.client.ReadInputRegister(11)) // 11 brine out scale 100
 	if err != nil {
 		return s, err
 	}
-	s.Outdoor, err = controller.Scale100itof(ts.readInputRegister(13)) // 13 Outdoor temp scale 100
+	s.Outdoor, err = controller.Scale100itof(ts.client.ReadInputRegister(13)) // 13 Outdoor temp scale 100
 	if err != nil {
 		return s, err
 	}
-	s.Indoor, err = controller.Scale10itof(ts.readInputRegister(121)) // Room temperature sensor scale 10
+	s.Indoor, err = controller.Scale10itof(ts.client.ReadInputRegister(121)) // Room temperature sensor scale 10
 	if err != nil {
 		return s, err
 	}
 
-	s.WarmWater, err = controller.Scale100itof(ts.readInputRegister(17)) // 17 tank Tap water weighted temperature scale 100
+	s.WarmWater, err = controller.Scale100itof(ts.client.ReadInputRegister(17)) // 17 tank Tap water weighted temperature scale 100
 	if err != nil {
 		return s, err
 	}
-	s.Compressor, err = controller.Scale100itof(ts.readInputRegister(54)) // Compressor speed percent scale 100
+	s.Compressor, err = controller.Scale100itof(ts.client.ReadInputRegister(54)) // Compressor speed percent scale 100
 	if err != nil {
 		return s, err
 	}
-	s.Indoor, err = controller.Scale100itof(ts.readInputRegister(121)) // Room temperature sensor scale 10
+	s.Indoor, err = controller.Scale100itof(ts.client.ReadInputRegister(121)) // Room temperature sensor scale 10
 	if err != nil {
 		return s, err
 	}
-	s.RadiatorForward, err = controller.Scale100itof(ts.readInputRegister(12)) // System supply line temperature scale 100 vad är detta?! visar bara 200.0 så inte inkopplad?
+	s.RadiatorForward, err = controller.Scale100itof(ts.client.ReadInputRegister(12)) // System supply line temperature scale 100 vad är detta?! visar bara 200.0 så inte inkopplad?
 	// https://github.com/CJNE/thermiagenesis/issues/157#issuecomment-1250896092
 	if err != nil {
 		return s, err
 	}
-	s.RadiatorReturn, err = controller.Scale100itof(ts.readInputRegister(27)) // input reg 27 System return line temperature. visar 0 hos per
+	s.RadiatorReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(27)) // input reg 27 System return line temperature. visar 0 hos per
 	if err != nil {
 		return s, err
 	}
 
-	s.HeatCarrierForward, err = controller.Scale100itof(ts.readInputRegister(9)) // input reg 9 Condenser out temperature som visar 47.26 kan vara detta? HeatCarrierForward!
+	s.HeatCarrierForward, err = controller.Scale100itof(ts.client.ReadInputRegister(9)) // input reg 9 Condenser out temperature som visar 47.26 kan vara detta? HeatCarrierForward!
 	if err != nil {
 		return s, err
 	}
-	s.HeatCarrierReturn, err = controller.Scale100itof(ts.readInputRegister(8)) // input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
+	s.HeatCarrierReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(8)) // input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
 	if err != nil {
 		return s, err
 	}
-	s.PumpBrine, err = controller.Scale100itof(ts.readInputRegister(44)) // input reg 44 Brine circulation pump speed (%) just nu 66.81 PumpBrine
+	s.PumpBrine, err = controller.Scale100itof(ts.client.ReadInputRegister(44)) // input reg 44 Brine circulation pump speed (%) just nu 66.81 PumpBrine
 	if err != nil {
 		return s, err
 	}
-	s.PumpHeat, err = controller.Scale100itof(ts.readInputRegister(39)) // input reg 39 Condenser circulation pump speed (%) just nu 60.1 PumpHeat
+	s.PumpHeat, err = controller.Scale100itof(ts.client.ReadInputRegister(39)) // input reg 39 Condenser circulation pump speed (%) just nu 60.1 PumpHeat
 	if err != nil {
 		return s, err
 	}
 
-	s.HotGasCompressor, err = controller.Scale100itof(ts.readInputRegister(7)) // input reg 7 Discharge pipe temperature
+	s.HotGasCompressor, err = controller.Scale100itof(ts.client.ReadInputRegister(7)) // input reg 7 Discharge pipe temperature
 	if err != nil {
 		return s, err
 	}
-	s.SuperHeatTemperature, err = controller.Scale100itof(ts.readInputRegister(125)) // input reg 125 Superheat temperature
+	s.SuperHeatTemperature, err = controller.Scale100itof(ts.client.ReadInputRegister(125)) // input reg 125 Superheat temperature
 	if err != nil {
 		return s, err
 	}
-	s.SuctionGasTemperature, err = controller.Scale100itof(ts.readInputRegister(130)) // input reg 130 Suction gas temperature
+	s.SuctionGasTemperature, err = controller.Scale100itof(ts.client.ReadInputRegister(130)) // input reg 130 Suction gas temperature
 	if err != nil {
 		return s, err
 	}
-	s.LowPressureSidePressure, err = controller.Scale100itof(ts.readInputRegister(127)) // input reg 127 Low pressure side, pressure (bar(g))
+	s.LowPressureSidePressure, err = controller.Scale100itof(ts.client.ReadInputRegister(127)) // input reg 127 Low pressure side, pressure (bar(g))
 	if err != nil {
 		return s, err
 	}
-	s.HighPressureSidePressure, err = controller.Scale100itof(ts.readInputRegister(128)) // input reg 128 High pressure side, pressure (bar(g))
+	s.HighPressureSidePressure, err = controller.Scale100itof(ts.client.ReadInputRegister(128)) // input reg 128 High pressure side, pressure (bar(g))
 	if err != nil {
 		return s, err
 	}
@@ -125,15 +127,19 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	// write single coil(5) enable heat 9
 	// write single coil(5) enable tap water 8
 
+	// operational mode WriteSingleRegister 0 1: OFF, 2: Standby, 3: ON/Auto
+
 	return s, nil
 }
 
 func (ts *Thermiagenesis) AllowHeating(b bool) error {
-	return nil
+	_, err := ts.client.WriteSingleRegister(9, modbusclient.CoilValue(b))
+	return err
 }
 
 func (ts *Thermiagenesis) AllowHotwater(b bool) error {
-	return nil
+	_, err := ts.client.WriteSingleRegister(8, modbusclient.CoilValue(b))
+	return err
 }
 
 func (ts *Thermiagenesis) BoostHotwater(b bool) error {
@@ -156,14 +162,4 @@ func (ts *Thermiagenesis) BoostHotwater(b bool) error {
 	}
 	return nil
 
-}
-
-func (ts *Thermiagenesis) readInputRegister(address uint16) (int, error) {
-	b, err := ts.client.ReadInputRegisters(address, 1)
-	return controller.Decode(b), err
-}
-
-func (ts *Thermiagenesis) readHoldingRegister(address uint16) (int, error) {
-	b, err := ts.client.ReadHoldingRegisters(address, 1)
-	return controller.Decode(b), err
 }

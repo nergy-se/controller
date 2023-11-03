@@ -9,16 +9,19 @@ import (
 )
 
 type HourConfig struct {
-	Time     time.Time `json:"time"`
-	Hotwater bool      `json:"hotwater"`
-	Heating  bool      `json:"heating"`
+	Time          time.Time `json:"time"`
+	Price         float64   `json:"price"`
+	Hotwater      bool      `json:"hotwater"`
+	HotwaterForce bool      `json:"hotwaterForce"`
+	Heating       bool      `json:"heating"`
 }
 type Schedule map[time.Time]*HourConfig
 
 type CloudConfig struct {
-	HeatControlType types.HeatControlType `json:"heatControlType"`
-	Address         string                `json:"address"`
-	ControllerId    string                `json:"controllerId"`
+	HeatControlType      types.HeatControlType `json:"heatControlType"`
+	Address              string                `json:"address"`
+	DistrictHeatingPrice float64               `json:"districtHeatingPrice"`
+	ControllerId         string                `json:"controllerId"`
 }
 
 type Config struct {
