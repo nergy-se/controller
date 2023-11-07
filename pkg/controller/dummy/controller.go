@@ -1,11 +1,14 @@
 package dummy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
@@ -16,9 +19,11 @@ type Dummy struct {
 	sync.Mutex
 }
 
-func New() *Dummy {
+func New(ctx context.Context) *Dummy {
 	dummy := &Dummy{}
-	http.HandleFunc("/alarm", func(w http.ResponseWriter, req *http.Request) {
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/alarm", func(w http.ResponseWriter, req *http.Request) {
 		msg := req.URL.Query().Get("message")
 		if msg == "" {
 			dummy.Lock()
@@ -32,16 +37,30 @@ func New() *Dummy {
 		dummy.Unlock()
 		fmt.Fprintf(w, "adding alarm with %s\n", msg)
 	})
-	http.HandleFunc("/resetalarms", func(w http.ResponseWriter, req *http.Request) {
+	mux.HandleFunc("/resetalarms", func(w http.ResponseWriter, req *http.Request) {
 		dummy.Lock()
 		dummy.alarms = nil
 		dummy.Unlock()
 		fmt.Fprintf(w, "alarms reset\n")
 	})
+	srv := &http.Server{
+		Addr:    ":8888",
+		Handler: mux,
+	}
 
 	go func() {
-		err := http.ListenAndServe(":8888", nil)
-		if err != nil {
+		err := srv.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logrus.Error(err)
+		}
+	}()
+
+	go func() {
+		<-ctx.Done()
+		ctxShutDown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(ctxShutDown); !errors.Is(err, http.ErrServerClosed) && err != nil {
 			logrus.Error(err)
 		}
 	}()

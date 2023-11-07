@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +65,9 @@ type App struct {
 	controller controller.Controller
 
 	activeAlarms *activeAlarms
+
+	ctx            context.Context
+	stopController context.CancelFunc
 }
 
 func New(config *v1config.CliConfig) *App {
@@ -76,12 +80,13 @@ func New(config *v1config.CliConfig) *App {
 }
 
 func (a *App) Start(ctx context.Context) error {
+	a.ctx = ctx
 	err := a.setupConfig()
 	if err != nil {
 		return err
 	}
 
-	err = a.setupController()
+	err = a.setupController(ctx)
 	if err != nil {
 		return err
 	}
@@ -106,7 +111,11 @@ func (a *App) setupConfig() error {
 		}
 		return nil
 	}
-	cloudConfig, err := a.fetchConfig()
+	return a.syncCloudConfig(false)
+}
+
+func (a *App) syncCloudConfig(fromXFetch bool) error {
+	cloudConfig, err := a.fetchConfig(fromXFetch)
 	if err != nil {
 		return err
 	}
@@ -114,18 +123,26 @@ func (a *App) setupConfig() error {
 	return nil
 }
 
-func (a *App) setupController() error {
+func (a *App) setupController(pCtx context.Context) error {
+	if a.stopController != nil {
+		a.stopController()
+	}
+	ctx, cancel := context.WithCancel(pCtx)
+	a.stopController = cancel
 	switch a.cloudConfig.HeatControlType {
 	case types.HeatControlTypeThermiaGenesis:
 		client := modbus.TCPClient(a.cloudConfig.Address)
 		a.controller = thermiagenesis.New(modbusclient.New(client), false)
+		logrus.Debug("configured controller thermiagenesis")
 
 	case types.HeatControlTypeHogforsGST:
 		client := modbus.TCPClient(a.cloudConfig.Address)
 		a.controller = hogforsgst.New(modbusclient.New(client), a.cloudConfig.DistrictHeatingPrice)
+		logrus.Debug("configured controller hogforsgst")
 
 	case types.HeatControlTypeDummy:
-		a.controller = dummy.New()
+		a.controller = dummy.New(ctx)
+		logrus.Debug("configured controller dummy")
 	}
 	return nil
 }
@@ -233,7 +250,7 @@ func (a *App) sendMetrics() error {
 		return err
 	}
 
-	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body))
+	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body), nil)
 }
 
 func (a *App) sendAlarms() error {
@@ -245,7 +262,7 @@ func (a *App) sendAlarms() error {
 	if len(alarms) == 0 {
 		hadActive := a.activeAlarms.Clear()
 		if hadActive {
-			return a.do("api/controller/alarms-v1", "DELETE", nil, nil)
+			return a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil)
 		}
 		return nil
 	}
@@ -261,7 +278,7 @@ func (a *App) sendAlarms() error {
 			continue
 		}
 
-		err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body))
+		err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -272,7 +289,7 @@ func (a *App) sendAlarms() error {
 
 func (a *App) refreshToken() error {
 	resp := &struct{ Token string }{}
-	err := a.do("api/token-v1", "POST", resp, nil)
+	err := a.do("api/token-v1", "POST", resp, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -283,20 +300,25 @@ func (a *App) refreshToken() error {
 
 func (a *App) updateSchedule() error {
 	schedule := make(v1config.Schedule)
-	err := a.do("api/controller/schedule-v1", "GET", &schedule, nil)
+	err := a.do("api/controller/schedule-v1", "GET", &schedule, nil, nil)
 
 	a.schedule.MergeSchedule(schedule)
 	a.schedule.ClearOld()
 	return err
 }
 
-func (a *App) fetchConfig() (*v1config.CloudConfig, error) {
+func (a *App) fetchConfig(fromXFetch bool) (*v1config.CloudConfig, error) {
 	response := &v1config.CloudConfig{}
-	err := a.do("api/controller/config-v1", "GET", response, nil)
+	var header http.Header
+	if fromXFetch {
+		header = make(http.Header)
+		header.Set("x-fetch", "ControllerConfig")
+	}
+	err := a.do("api/controller/config-v1", "GET", response, nil, header)
 	return response, err
 }
 
-func (a *App) do(u string, method string, dst any, body io.Reader) error {
+func (a *App) do(u string, method string, dst any, body io.Reader, header http.Header) error {
 	logrus.Debugf("%s to %s", method, u)
 	u = fmt.Sprintf("%s/%s", a.cliConfig.Server, u)
 	req, err := http.NewRequest(method, u, body)
@@ -306,6 +328,10 @@ func (a *App) do(u string, method string, dst any, body io.Reader) error {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Add("Authorization", a.cliConfig.APIToken)
+
+	for key, val := range header {
+		req.Header[key] = val
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -319,6 +345,26 @@ func (a *App) do(u string, method string, dst any, body io.Reader) error {
 			return err
 		}
 		return fmt.Errorf("error %s %s StatusCode: %d, body: %s", method, u, resp.StatusCode, string(body))
+	}
+
+	if resp.Header.Get("x-fetch") != "" {
+		// if server indicated we need new config...
+		keys := strings.Split(resp.Header.Get("x-fetch"), ",")
+		logrus.Debug("got x-fetch with keys: ", keys)
+		for _, key := range keys {
+			if key != "ControllerConfig" { //TODO when we need more of them
+				continue
+			}
+
+			err = a.syncCloudConfig(true)
+			if err != nil {
+				return err
+			}
+			err = a.setupController(a.ctx)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	if dst == nil {
