@@ -28,6 +28,7 @@ type State struct {
 	SuctionGasTemperature    *float64 `json:"suctionGasTemperature,omitempty"`
 	LowPressureSidePressure  *float64 `json:"lowPressureSidePressure,omitempty"`
 	HighPressureSidePressure *float64 `json:"highPressureSidePressure,omitempty"`
+	COP                      *float64 `json:"cop,omitempty"`
 }
 
 func (s State) Map() map[string]interface{} {
@@ -91,6 +92,9 @@ func (s State) Map() map[string]interface{} {
 	}
 	if s.HighPressureSidePressure != nil {
 		m["highPressureSidePressure"] = *s.HighPressureSidePressure
+	}
+	if s.COP != nil {
+		m["cop"] = *s.COP
 	}
 
 	return m

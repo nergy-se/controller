@@ -27,3 +27,8 @@ func Scale10itof(i int, err error) (*float64, error) {
 	f := float64(i) / 10.0
 	return &f, err
 }
+
+func Scale1itof(i int, err error) (*float64, error) {
+	f := float64(i)
+	return &f, err
+}

@@ -3,6 +3,7 @@ package thermiagenesis
 import (
 	"fmt"
 
+	"github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
@@ -10,14 +11,16 @@ import (
 )
 
 type Thermiagenesis struct {
-	client   modbusclient.Client
-	readonly bool
+	client      modbusclient.Client
+	cloudConfig *config.CloudConfig
+	readonly    bool
 }
 
-func New(client modbusclient.Client, readonly bool) *Thermiagenesis {
+func New(client modbusclient.Client, readonly bool, cloudConfig *config.CloudConfig) *Thermiagenesis {
 	return &Thermiagenesis{
-		client:   client,
-		readonly: readonly,
+		client:      client,
+		cloudConfig: cloudConfig,
+		readonly:    readonly,
 	}
 }
 
@@ -143,11 +146,15 @@ func (ts *Thermiagenesis) AllowHotwater(b bool) error {
 }
 
 func (ts *Thermiagenesis) BoostHotwater(b bool) error {
-	start := 41
-	stop := 50
+	start := ts.cloudConfig.HotWaterNormalStartTemperature
+	stop := ts.cloudConfig.HotWaterNormalStopTemperature
 	if b {
-		start = 50
-		stop = 55
+		start = ts.cloudConfig.HotWaterBoostStartTemperature
+		stop = ts.cloudConfig.HotWaterBoostStopTemperature
+	}
+
+	if stop == 0 || start == 0 {
+		return fmt.Errorf("start/stop temperature for boost not configured")
 	}
 
 	logrus.WithFields(logrus.Fields{"start": start, "stop": stop}).Debugf("thermiagenesis: boosthotwater")

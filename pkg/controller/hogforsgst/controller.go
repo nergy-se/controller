@@ -1,6 +1,7 @@
 package hogforsgst
 
 import (
+	"github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
@@ -10,139 +11,91 @@ type Hogforsgst struct {
 	client modbusclient.Client
 	COP    float64
 
-	districtHeatingPrice float64
+	cloudConfig *config.CloudConfig
 }
 
-func New(client modbusclient.Client, districtHeatingPrice float64) *Hogforsgst {
+func New(client modbusclient.Client, cloudConfig *config.CloudConfig) *Hogforsgst {
 	return &Hogforsgst{
-		client:               client,
-		districtHeatingPrice: districtHeatingPrice,
+		client:      client,
+		cloudConfig: cloudConfig,
 	}
 }
 
 func (ts *Hogforsgst) State() (*state.State, error) {
-	/*
-		s := &state.State{
-			Indoor:             nil,
-			Outdoor:            nil,
-			HeatCarrierForward: nil,
-			HeatCarrierReturn:  nil,
-			RadiatorForward:    nil,
-			RadiatorReturn:     nil,
-			BrineIn:            nil,
-			BrineOut:           nil,
-			HotGasCompressor:   nil,
-			WarmWater:          nil,
-			Compressor:         nil,
-			Alarm:              nil,
-			SwitchValve:        nil,
-			PumpBrine:          nil,
-			PumpHeat:           nil,
-			PumpRadiator:       nil,
-		}
-		var err error
+	s := &state.State{}
+	var err error
 
-		s.BrineIn, err = controller.Scale100itof(ts.client.ReadInputRegister(10)) // 10 brine in scale 100
-		if err != nil {
-			return s, err
-		}
+	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(551))
+	if err != nil {
+		return s, err
+	}
 
-		s.BrineOut, err = controller.Scale100itof(ts.client.ReadInputRegister(11)) // 11 brine out scale 100
-		if err != nil {
-			return s, err
-		}
-		s.Outdoor, err = controller.Scale100itof(ts.client.ReadInputRegister(13)) // 13 Outdoor temp scale 100
-		if err != nil {
-			return s, err
-		}
-		s.Indoor, err = controller.Scale10itof(ts.client.ReadInputRegister(121)) // Room temperature sensor scale 10
-		if err != nil {
-			return s, err
-		}
+	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister(553))
+	if err != nil {
+		return s, err
+	}
 
-		s.WarmWater, err = controller.Scale100itof(ts.client.ReadInputRegister(17)) // 17 tank Tap water weighted temperature scale 100
-		if err != nil {
-			return s, err
-		}
-		s.Compressor, err = controller.Scale100itof(ts.client.ReadInputRegister(54)) // Compressor speed percent scale 100
-		if err != nil {
-			return s, err
-		}
-		s.Indoor, err = controller.Scale100itof(ts.client.ReadInputRegister(121)) // Room temperature sensor scale 10
-		if err != nil {
-			return s, err
-		}
-		s.RadiatorForward, err = controller.Scale100itof(ts.client.ReadInputRegister(12)) // System supply line temperature scale 100 vad är detta?! visar bara 200.0 så inte inkopplad?
-		if err != nil {
-			return s, err
-		}
-		s.RadiatorReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(27)) // input reg 27 System return line temperature. visar 0 hos per
-		if err != nil {
-			return s, err
-		}
+	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(555))
+	if err != nil {
+		return s, err
+	}
 
-		s.HeatCarrierForward, err = controller.Scale100itof(ts.client.ReadInputRegister(9)) // input reg 9 Condenser out temperature som visar 47.26 kan vara detta? HeatCarrierForward!
-		if err != nil {
-			return s, err
-		}
-		s.HeatCarrierReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(8)) // input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
-		if err != nil {
-			return s, err
-		}
-		s.PumpBrine, err = controller.Scale100itof(ts.client.ReadInputRegister(44)) // input reg 44 Brine circulation pump speed (%) just nu 66.81 PumpBrine
-		if err != nil {
-			return s, err
-		}
-		s.PumpHeat, err = controller.Scale100itof(ts.client.ReadInputRegister(39)) // input reg 39 Condenser circulation pump speed (%) just nu 60.1 PumpHeat
-		if err != nil {
-			return s, err
-		}
+	s.PumpBrine, err = controller.Scale1itof(ts.client.ReadHoldingRegister(563))
+	if err != nil {
+		return s, err
+	}
 
-		s.HotGasCompressor, err = controller.Scale100itof(ts.client.ReadInputRegister(7)) // input reg 7 Discharge pipe temperature
-		if err != nil {
-			return s, err
-		}
-		s.SuperHeatTemperature, err = controller.Scale100itof(ts.client.ReadInputRegister(125)) // input reg 125 Superheat temperature
-		if err != nil {
-			return s, err
-		}
-		s.SuctionGasTemperature, err = controller.Scale100itof(ts.client.ReadInputRegister(130)) // input reg 130 Suction gas temperature
-		if err != nil {
-			return s, err
-		}
-		s.LowPressureSidePressure, err = controller.Scale100itof(ts.client.ReadInputRegister(127)) // input reg 127 Low pressure side, pressure (bar(g))
-		if err != nil {
-			return s, err
-		}
-		s.HighPressureSidePressure, err = controller.Scale100itof(ts.client.ReadInputRegister(128)) // input reg 128 High pressure side, pressure (bar(g))
-		if err != nil {
-			return s, err
-		}
+	//TODO
+	// värmepump EL effekt just nu 1936 1 dec
+	// värmepump tillförd energi just nu 975 1 dec
+	// hetgas tillförd energi kw 971 1 dec
 
-		return s, nil
-	*/
-	//TODO läs ut nuvarande COP här och spara i local state
-	cop, err := controller.Scale100itof(ts.client.ReadInputRegister(0))
+	s.RadiatorForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(283)) // 101TE41.2 Värme framledningstemperatur
+	if err != nil {
+		return s, err
+	}
+
+	s.RadiatorReturn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(281)) // 101TE42 Värme returtemperatur
+	if err != nil {
+		return s, err
+	}
+
+	s.Outdoor, err = controller.Scale10itof(ts.client.ReadHoldingRegister(275)) // 101TE00 Utetemperatur
+	if err != nil {
+		return s, err
+	}
+	gear, err := controller.Scale10itof(ts.client.ReadHoldingRegister(565))
+	if err != nil {
+		return s, err
+	}
+
+	speed := (float64(*gear) / 10.0) * 100 // it has 10 gears
+	s.Compressor = &speed
+
+	s.COP, err = controller.Scale10itof(ts.client.ReadHoldingRegister(408))
 	if err != nil {
 		return nil, err
 	}
-	ts.COP = *cop
-	return nil, nil //TODO
+	ts.COP = *s.COP
+	return s, nil
 }
 
 func (ts *Hogforsgst) allowHeatpump() bool {
+	//TODO kolla om vi behöver ta avg COP över längre tid?
 	price := 1.0 //TODO
-	return price/ts.COP < ts.districtHeatingPrice
+	return price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
 }
 
 func (ts *Hogforsgst) AllowHeating(b bool) error {
-	_, err := ts.client.WriteSingleRegister(9, modbusclient.CoilValue(b))
-	return err
+	// _, err := ts.client.WriteSingleRegister(9, modbusclient.CoilValue(b))
+	// return err
+	return nil
 }
 
 func (ts *Hogforsgst) AllowHotwater(b bool) error {
-	_, err := ts.client.WriteSingleRegister(8, modbusclient.CoilValue(b))
-	return err
+	// _, err := ts.client.WriteSingleRegister(8, modbusclient.CoilValue(b))
+	// return err
+	return nil
 }
 
 func (ts *Hogforsgst) BoostHotwater(b bool) error {

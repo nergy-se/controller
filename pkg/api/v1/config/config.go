@@ -4,8 +4,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/nergy-se/controller/pkg/api/v1/types"
 )
 
 type HourConfig struct {
@@ -16,13 +14,6 @@ type HourConfig struct {
 	Heating       bool      `json:"heating"`
 }
 type Schedule map[time.Time]*HourConfig
-
-type CloudConfig struct {
-	HeatControlType      types.HeatControlType `json:"heatControlType"`
-	Address              string                `json:"address"`
-	DistrictHeatingPrice float64               `json:"districtHeatingPrice"`
-	ControllerId         string                `json:"controllerId"`
-}
 
 type Config struct {
 	schedule Schedule
