@@ -102,6 +102,10 @@ func (a *App) setupConfig() error {
 	if err != nil {
 		return err
 	}
+	err = a.cliConfig.LoadSerial()
+	if err != nil {
+		return err
+	}
 
 	if a.cliConfig.ControllerType != "" && a.cliConfig.Address != "" {
 		logrus.Infof("using controller %s specified in cli config", a.cliConfig.ControllerType)
@@ -327,6 +331,9 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if s := a.cliConfig.SerialID(); s != "" {
+		req.Header.Set("x-serial", s)
+	}
 	req.Header.Add("Authorization", a.cliConfig.APIToken)
 
 	for key, val := range header {

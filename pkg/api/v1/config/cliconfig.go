@@ -1,18 +1,23 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
 )
 
 type CliConfig struct {
-	Server    string `default:"https://nergy.se"`
-	APIToken  string
-	TokenFile string `default:"/etc/nergytoken"`
+	Server     string `default:"https://nergy.se"`
+	APIToken   string
+	TokenFile  string `default:"/etc/nergytoken"`
+	SerialFile string `default:"/sys/firmware/devicetree/base/serial-number"`
 
 	ControllerType string
 	Address        string
+
+	Serial string
 
 	LogLevel string `default:"info"`
 
@@ -52,5 +57,22 @@ func (c *CliConfig) LoadToken() error {
 
 		c.SetToken(string(b))
 	}
+	return nil
+}
+
+func (c *CliConfig) SerialID() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.Serial
+}
+
+func (c *CliConfig) LoadSerial() error {
+	id, err := os.ReadFile(c.SerialFile)
+	if err != nil {
+		return fmt.Errorf("error reading serialfile: %w", err)
+	}
+	c.mutex.Lock()
+	c.Serial = string(bytes.TrimSpace(bytes.Trim(id, "\x00")))
+	c.mutex.Unlock()
 	return nil
 }
