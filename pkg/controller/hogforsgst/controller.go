@@ -25,17 +25,17 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	s := &state.State{}
 	var err error
 
-	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(551))
+	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(551 - 1))
 	if err != nil {
 		return s, err
 	}
 
-	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister(553))
+	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister(553 - 1))
 	if err != nil {
 		return s, err
 	}
 
-	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(555))
+	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(555 - 1))
 	if err != nil {
 		return s, err
 	}
