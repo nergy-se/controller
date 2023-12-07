@@ -140,7 +140,9 @@ func (a *App) setupController(pCtx context.Context) error {
 		logrus.Debug("configured controller thermiagenesis")
 
 	case types.HeatControlTypeHogforsGST:
-		client := modbus.TCPClient(a.cloudConfig.Address)
+		handler := modbus.NewTCPClientHandler(a.cloudConfig.Address)
+		handler.SlaveId = 1
+		client := modbus.NewClient(handler)
 		a.controller = hogforsgst.New(modbusclient.New(client), a.cloudConfig)
 		logrus.Debug("configured controller hogforsgst")
 

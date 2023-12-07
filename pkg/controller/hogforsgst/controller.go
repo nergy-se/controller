@@ -5,6 +5,7 @@ import (
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
+	"github.com/sirupsen/logrus"
 )
 
 type Hogforsgst struct {
@@ -18,7 +19,7 @@ func New(client modbusclient.Client, cloudConfig *config.CloudConfig) *Hogforsgs
 	return &Hogforsgst{
 		client:      client,
 		cloudConfig: cloudConfig,
-		COP:         3, // default lower COP should be arround 3 on thermia.
+		COP:         3.5, // default lower COP should be arround 3 on thermia.
 	}
 }
 
@@ -26,17 +27,17 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	s := &state.State{}
 	var err error
 
-	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(551 - 1))
+	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(551))
 	if err != nil {
 		return s, err
 	}
 
-	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister(553 - 1))
+	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister(553))
 	if err != nil {
 		return s, err
 	}
 
-	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(555 - 1))
+	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(555))
 	if err != nil {
 		return s, err
 	}
@@ -86,7 +87,14 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 
 func (ts *Hogforsgst) allowHeatpump(price float64) bool {
 	//TODO kolla om vi behöver ta avg COP över längre tid?
-	return price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
+	allow := price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
+	logrus.WithFields(logrus.Fields{
+		"cop":           ts.COP,
+		"price":         price,
+		"districtprice": ts.cloudConfig.DistrictHeatingPrice,
+		"allow":         allow,
+	}).Infof("hogforsgst: allowHeatpump")
+	return allow
 }
 
 func (ts *Hogforsgst) Reconcile(current *config.HourConfig) error {

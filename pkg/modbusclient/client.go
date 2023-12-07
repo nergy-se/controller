@@ -3,6 +3,7 @@ package modbusclient
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/goburrow/modbus"
 )
@@ -27,23 +28,41 @@ func New(c modbus.Client) *client {
 
 func (c *client) ReadInputRegister(address uint16) (int, error) {
 	b, err := c.client.ReadInputRegisters(address, 1)
+	if err != nil {
+		err = fmt.Errorf("error reading address %d: %w", address, err)
+	}
 	return Decode(b), err
 }
 
 func (c *client) ReadHoldingRegister(address uint16) (int, error) {
 	b, err := c.client.ReadHoldingRegisters(address, 1)
+	if err != nil {
+		err = fmt.Errorf("error reading address %d: %w", address, err)
+	}
 	return Decode(b), err
 }
 
 func (c *client) ReadDiscreteInput(address uint16) ([]byte, error) {
-	return c.client.ReadDiscreteInputs(address, 1)
+	b, err := c.client.ReadDiscreteInputs(address, 1)
+
+	if err != nil {
+		err = fmt.Errorf("error reading address %d: %w", address, err)
+	}
+	return b, err
 }
 
 func (c *client) WriteSingleRegister(address, value uint16) ([]byte, error) {
-	return c.client.WriteSingleRegister(address, value)
+	b, err := c.client.WriteSingleRegister(address, value)
+	if err != nil {
+		err = fmt.Errorf("error writing address %d value %d error: %w", address, value, err)
+	}
+	return b, err
 }
 func (c *client) WriteSingleCoil(address, value uint16) (int, error) {
 	b, err := c.client.WriteSingleCoil(address, value)
+	if err != nil {
+		err = fmt.Errorf("error writing address %d value %d error: %w", address, value, err)
+	}
 	return Decode(b), err
 }
 
