@@ -18,6 +18,7 @@ func New(client modbusclient.Client, cloudConfig *config.CloudConfig) *Hogforsgs
 	return &Hogforsgst{
 		client:      client,
 		cloudConfig: cloudConfig,
+		COP:         3, // default lower COP should be arround 3 on thermia.
 	}
 }
 
@@ -49,6 +50,7 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	// värmepump EL effekt just nu 1936 1 dec
 	// värmepump tillförd energi just nu 975 1 dec
 	// hetgas tillförd energi kw 971 1 dec
+	// ex (61.9+0.9) / 20.4kw
 
 	s.RadiatorForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(283)) // 101TE41.2 Värme framledningstemperatur
 	if err != nil {
@@ -76,30 +78,36 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	if err != nil {
 		return nil, err
 	}
-	ts.COP = *s.COP
+	if speed > 0.0 { // dont count COP if pump isnt running
+		ts.COP = *s.COP
+	}
 	return s, nil
 }
 
-func (ts *Hogforsgst) allowHeatpump() bool {
+func (ts *Hogforsgst) allowHeatpump(price float64) bool {
 	//TODO kolla om vi behöver ta avg COP över längre tid?
-	price := 1.0 //TODO
 	return price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
 }
 
-func (ts *Hogforsgst) AllowHeating(b bool) error {
-	// _, err := ts.client.WriteSingleRegister(9, modbusclient.CoilValue(b))
-	// return err
-	return nil
-}
+func (ts *Hogforsgst) Reconcile(current *config.HourConfig) error {
 
-func (ts *Hogforsgst) AllowHotwater(b bool) error {
-	// _, err := ts.client.WriteSingleRegister(8, modbusclient.CoilValue(b))
-	// return err
-	return nil
-}
+	if !ts.allowHeatpump(current.Price) {
+		_, err := ts.client.WriteSingleRegister(4031-1, 1) // external control true
+		if err != nil {
+			return err
+		}
+		_, err = ts.client.WriteSingleRegister(4051-1, 20) // 20 C will turn off heatpump
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	// allow heatpump normal operations.
+	_, err := ts.client.WriteSingleRegister(4031-1, 0) // external control false
+	if err != nil {
+		return err
+	}
 
-func (ts *Hogforsgst) BoostHotwater(b bool) error {
-	// TODO do we even want this here?
 	return nil
 }
 

@@ -227,20 +227,7 @@ func (a *App) reconcile() error {
 		return fmt.Errorf("no current schedule")
 	}
 
-	//TODO call Reconcile on controller Interface and if that method is implemented and returns true, error we just skip the below?
-
-	err := a.controller.AllowHeating(current.Heating)
-	if err != nil {
-		return err
-	}
-
-	// TODO make it a config to chose if we want to block both hotwater and heating?
-	err = a.controller.AllowHotwater(current.Hotwater)
-	if err != nil {
-		return err
-	}
-
-	return a.controller.BoostHotwater(current.HotwaterForce)
+	return a.controller.Reconcile(current)
 }
 
 func (a *App) sendMetrics() error {

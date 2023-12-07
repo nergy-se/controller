@@ -135,17 +135,36 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	return s, nil
 }
 
-func (ts *Thermiagenesis) AllowHeating(b bool) error {
-	_, err := ts.client.WriteSingleRegister(9, modbusclient.CoilValue(b))
+func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
+
+	//TODO if ts.cloudConfig.DistrictHeatingPrice != 00
+	// then disallow heating and hotwater if its to expensive
+	//  price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
+
+	err := ts.allowHeating(current.Heating)
+	if err != nil {
+		return err
+	}
+
+	err = ts.allowHotwater(current.Hotwater)
+	if err != nil {
+		return err
+	}
+
+	return ts.boostHotwater(current.HotwaterForce)
+}
+
+func (ts *Thermiagenesis) allowHeating(b bool) error {
+	_, err := ts.client.WriteSingleCoil(9, modbusclient.CoilValue(b))
 	return err
 }
 
-func (ts *Thermiagenesis) AllowHotwater(b bool) error {
-	_, err := ts.client.WriteSingleRegister(8, modbusclient.CoilValue(b))
+func (ts *Thermiagenesis) allowHotwater(b bool) error {
+	_, err := ts.client.WriteSingleCoil(8, modbusclient.CoilValue(b))
 	return err
 }
 
-func (ts *Thermiagenesis) BoostHotwater(b bool) error {
+func (ts *Thermiagenesis) boostHotwater(b bool) error {
 	start := ts.cloudConfig.HotWaterNormalStartTemperature
 	stop := ts.cloudConfig.HotWaterNormalStopTemperature
 	if b {

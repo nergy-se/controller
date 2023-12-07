@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
@@ -95,22 +96,32 @@ func (ts *Dummy) State() (*state.State, error) {
 	return s, nil
 }
 
-func (ts *Dummy) AllowHeating(b bool) error {
+func (ts *Dummy) Reconcile(current *config.HourConfig) error {
+	err := ts.allowHeating(current.Heating)
+	if err != nil {
+		return err
+	}
+
+	err = ts.allowHotwater(current.Hotwater)
+	if err != nil {
+		return err
+	}
+
+	return ts.boostHotwater(current.HotwaterForce)
+}
+func (ts *Dummy) allowHeating(b bool) error {
 	logrus.Info("dummy: AllowHeating: ", b)
 	return nil
 }
 
-func (ts *Dummy) AllowHotwater(b bool) error {
+func (ts *Dummy) allowHotwater(b bool) error {
 	logrus.Info("dummy: AllowHotwater: ", b)
 	return nil
 }
 
-func (ts *Dummy) BoostHotwater(b bool) error {
-	// TODO
+func (ts *Dummy) boostHotwater(b bool) error {
 	logrus.Info("dummy: BoostHotwater: ", b)
-
 	return nil
-
 }
 
 func (ts *Dummy) Alarms() ([]string, error) {
