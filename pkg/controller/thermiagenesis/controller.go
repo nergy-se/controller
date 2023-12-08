@@ -11,16 +11,19 @@ import (
 )
 
 type Thermiagenesis struct {
-	client      modbusclient.Client
-	cloudConfig *config.CloudConfig
-	readonly    bool
+	client             modbusclient.Client
+	cloudConfig        *config.CloudConfig
+	readonly           bool
+	calculatedCOP      float64
+	heatCarrierForward float64
 }
 
 func New(client modbusclient.Client, readonly bool, cloudConfig *config.CloudConfig) *Thermiagenesis {
 	return &Thermiagenesis{
-		client:      client,
-		cloudConfig: cloudConfig,
-		readonly:    readonly,
+		client:        client,
+		cloudConfig:   cloudConfig,
+		readonly:      readonly,
+		calculatedCOP: 4.0,
 	}
 }
 
@@ -89,6 +92,7 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
+	ts.heatCarrierForward = *s.HeatCarrierForward
 	s.HeatCarrierReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(8)) // input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
 	if err != nil {
 		return s, err
@@ -135,20 +139,47 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	return s, nil
 }
 
-func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
-
-	//TODO if ts.cloudConfig.DistrictHeatingPrice != 00
-	// then disallow heating and hotwater if its to expensive
-	//  price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
-
-	err := ts.allowHeating(current.Heating)
-	if err != nil {
-		return err
+func (ts *Thermiagenesis) allowHeatpump(price float64) bool {
+	if ts.heatCarrierForward == 0.0 { // vi har inte hämtat aktuell framledning ännu.
+		return true
 	}
 
-	err = ts.allowHotwater(current.Hotwater)
-	if err != nil {
-		return err
+	// 3.45+0.098*(60-<curtemp>)
+	// calculated from 3.45 at 60C and 5.9 at 35C
+	ts.calculatedCOP = 3.45 + 0.098*(60.0-ts.heatCarrierForward)
+
+	allow := price/ts.calculatedCOP < ts.cloudConfig.DistrictHeatingPrice
+	logrus.WithFields(logrus.Fields{
+		"cop":           ts.calculatedCOP,
+		"price":         price,
+		"districtprice": ts.cloudConfig.DistrictHeatingPrice,
+		"allow":         allow,
+	}).Infof("thermiagenesis: allowHeatpump")
+	return allow
+}
+
+func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
+
+	if ts.cloudConfig.DistrictHeatingPrice == 0.0 { // control based on levels.
+		err := ts.allowHeating(current.Heating)
+		if err != nil {
+			return err
+		}
+
+		err = ts.allowHotwater(current.Hotwater)
+		if err != nil {
+			return err
+		}
+	} else { // control based on DistrictHeatingPrice
+		allow := ts.allowHeatpump(current.Price)
+		err := ts.allowHeating(allow)
+		if err != nil {
+			return err
+		}
+		err = ts.allowHotwater(allow)
+		if err != nil {
+			return err
+		}
 	}
 
 	return ts.boostHotwater(current.HotwaterForce)
