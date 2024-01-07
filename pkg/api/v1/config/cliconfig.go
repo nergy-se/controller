@@ -39,7 +39,7 @@ func (c *CliConfig) PersistToken() error {
 	if c.TokenFile == "" {
 		return nil
 	}
-	return os.WriteFile(c.TokenFile, []byte(c.Token()), 0644)
+	return os.WriteFile(c.TokenFile, []byte(c.Token()), 0600)
 }
 
 func (c *CliConfig) LoadToken() error {
