@@ -13,6 +13,9 @@ type Hogforsgst struct {
 	COP    float64
 
 	cloudConfig *config.CloudConfig
+
+	heatingAllowed  bool
+	hotwaterAllowed bool
 }
 
 func New(client modbusclient.Client, cloudConfig *config.CloudConfig) *Hogforsgst {
@@ -72,6 +75,9 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 		return s, err
 	}
 
+	s.HeatingAllowed = boolPointer(ts.heatingAllowed)
+	s.HotwaterAllowed = boolPointer(ts.hotwaterAllowed)
+
 	speed := (float64(*gear) / 10.0) * 100 // it has 10 gears
 	s.Compressor = &speed
 
@@ -82,6 +88,7 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	if speed > 0.0 { // dont count COP if pump isnt running
 		ts.COP = *s.COP
 	}
+
 	return s, nil
 }
 
@@ -100,6 +107,8 @@ func (ts *Hogforsgst) allowHeatpump(price float64) bool {
 func (ts *Hogforsgst) Reconcile(current *config.HourConfig) error {
 
 	if !ts.allowHeatpump(current.Price) {
+		ts.heatingAllowed = false
+		ts.hotwaterAllowed = false
 		_, err := ts.client.WriteSingleRegister(4031-1, 1) // external control true
 		if err != nil {
 			return err
@@ -110,6 +119,8 @@ func (ts *Hogforsgst) Reconcile(current *config.HourConfig) error {
 		}
 		return nil
 	}
+	ts.heatingAllowed = true
+	ts.hotwaterAllowed = true
 	// allow heatpump normal operations.
 	_, err := ts.client.WriteSingleRegister(4031-1, 0) // external control false
 	if err != nil {
@@ -122,4 +133,7 @@ func (ts *Hogforsgst) Reconcile(current *config.HourConfig) error {
 func (ts *Hogforsgst) Alarms() ([]string, error) {
 	// TODO
 	return nil, nil
+}
+func boolPointer(v bool) *bool {
+	return &v
 }

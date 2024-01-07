@@ -16,6 +16,9 @@ type Thermiagenesis struct {
 	readonly           bool
 	calculatedCOP      float64
 	heatCarrierForward float64
+
+	heatingAllowed  bool
+	hotwaterAllowed bool
 }
 
 func New(client modbusclient.Client, readonly bool, cloudConfig *config.CloudConfig) *Thermiagenesis {
@@ -127,6 +130,9 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 		return s, err
 	}
 
+	s.HeatingAllowed = boolPointer(ts.heatingAllowed)
+	s.HotwaterAllowed = boolPointer(ts.hotwaterAllowed)
+
 	// input reg 147 Desired temperature distribution circuit Mix valve 1 verkar vara nuvarande uträknade börvärde? tex 38.08
 	// input reg 1 Currently running: First prioritised demand *1
 	//  1: Manual operation, 2: Defrost, 3: Hot water, 4: Heat, 5: Cool, 6: Pool, 7: Anti legionella, 98: Standby 99: No demand 100: OFF
@@ -161,6 +167,8 @@ func (ts *Thermiagenesis) allowHeatpump(price float64) bool {
 func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
 
 	if ts.cloudConfig.DistrictHeatingPrice == 0.0 { // control based on levels.
+		ts.heatingAllowed = current.Heating
+		ts.hotwaterAllowed = current.Hotwater
 		err := ts.allowHeating(current.Heating)
 		if err != nil {
 			return err
@@ -172,6 +180,8 @@ func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
 		}
 	} else { // control based on DistrictHeatingPrice
 		allow := ts.allowHeatpump(current.Price)
+		ts.heatingAllowed = allow
+		ts.hotwaterAllowed = allow
 		err := ts.allowHeating(allow)
 		if err != nil {
 			return err
@@ -219,4 +229,8 @@ func (ts *Thermiagenesis) boostHotwater(b bool) error {
 	}
 	return nil
 
+}
+
+func boolPointer(v bool) *bool {
+	return &v
 }

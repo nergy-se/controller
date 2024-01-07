@@ -29,6 +29,9 @@ type State struct {
 	LowPressureSidePressure  *float64 `json:"lowPressureSidePressure,omitempty"`
 	HighPressureSidePressure *float64 `json:"highPressureSidePressure,omitempty"`
 	COP                      *float64 `json:"cop,omitempty"`
+
+	HeatingAllowed  *bool `json:"heatingAllowed,omitempty"`
+	HotwaterAllowed *bool `json:"hotwaterAllowed,omitempty"`
 }
 
 func (s State) Map() map[string]interface{} {
@@ -95,6 +98,12 @@ func (s State) Map() map[string]interface{} {
 	}
 	if s.COP != nil {
 		m["cop"] = *s.COP
+	}
+	if s.HeatingAllowed != nil {
+		m["heatingAllowed"] = boolToInt(*s.HeatingAllowed)
+	}
+	if s.HotwaterAllowed != nil {
+		m["hotwaterAllowed"] = boolToInt(*s.HotwaterAllowed)
 	}
 
 	return m
