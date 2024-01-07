@@ -78,7 +78,7 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
-	s.RadiatorForward, err = controller.Scale100itof(ts.client.ReadInputRegister(12)) // System supply line temperature scale 100 vad är detta?! visar bara 200.0 så inte inkopplad?
+	s.RadiatorForward, err = controller.Scale100itof(ts.client.ReadInputRegister(12)) // System supply line temperature scale 100 visar bara 200.0 om inte inkopplad.
 	// https://github.com/CJNE/thermiagenesis/issues/157#issuecomment-1250896092
 	if err != nil {
 		return s, err
@@ -88,12 +88,12 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 		return s, err
 	}
 
-	s.HeatCarrierForward, err = controller.Scale100itof(ts.client.ReadInputRegister(9)) // input reg 9 Condenser out temperature som visar 47.26 kan vara detta? HeatCarrierForward!
+	s.HeatCarrierForward, err = controller.Scale100itof(ts.client.ReadInputRegister(9)) // input reg 9 Condenser out temperature
 	if err != nil {
 		return s, err
 	}
 	ts.heatCarrierForward = *s.HeatCarrierForward
-	s.HeatCarrierReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(8)) // input reg 8 Condenser in som visar 42.08 kan vara detta? HeatCarrierReturn!
+	s.HeatCarrierReturn, err = controller.Scale100itof(ts.client.ReadInputRegister(8)) // input reg 8 Condenser in
 	if err != nil {
 		return s, err
 	}

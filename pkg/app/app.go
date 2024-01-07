@@ -135,15 +135,16 @@ func (a *App) setupController(pCtx context.Context) error {
 	a.stopController = cancel
 	switch a.cloudConfig.HeatControlType {
 	case types.HeatControlTypeThermiaGenesis:
-		client := modbus.TCPClient(a.cloudConfig.Address)
-		a.controller = thermiagenesis.New(modbusclient.New(client), false, a.cloudConfig)
+		handler := modbus.NewTCPClientHandler(a.cloudConfig.Address)
+		client := modbus.NewClient(handler)
+		a.controller = thermiagenesis.New(modbusclient.New(client, handler.Close), false, a.cloudConfig)
 		logrus.Debug("configured controller thermiagenesis")
 
 	case types.HeatControlTypeHogforsGST:
 		handler := modbus.NewTCPClientHandler(a.cloudConfig.Address)
 		handler.SlaveId = 1
 		client := modbus.NewClient(handler)
-		a.controller = hogforsgst.New(modbusclient.New(client), a.cloudConfig)
+		a.controller = hogforsgst.New(modbusclient.New(client, handler.Close), a.cloudConfig)
 		logrus.Debug("configured controller hogforsgst")
 
 	case types.HeatControlTypeDummy:
