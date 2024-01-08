@@ -1,6 +1,8 @@
 package hogforsgst
 
 import (
+	"container/ring"
+
 	"github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
@@ -9,8 +11,8 @@ import (
 )
 
 type Hogforsgst struct {
-	client modbusclient.Client
-	COP    float64
+	client  modbusclient.Client
+	copRing *ring.Ring
 
 	cloudConfig *config.CloudConfig
 
@@ -19,11 +21,35 @@ type Hogforsgst struct {
 }
 
 func New(client modbusclient.Client, cloudConfig *config.CloudConfig) *Hogforsgst {
+	r := ring.New(1200) // 1200 each 30s will be 10 hours
+	r.Value = 3.5       // init with a "standard COP". Should be arround 3 on thermia
+	r = r.Next()
+
 	return &Hogforsgst{
 		client:      client,
 		cloudConfig: cloudConfig,
-		COP:         3.5, // default lower COP should be arround 3 on thermia.
+		copRing:     r,
 	}
+}
+
+func (ts *Hogforsgst) addCOP(f float64) {
+	ts.copRing.Value = f
+	ts.copRing = ts.copRing.Next()
+}
+
+func (ts *Hogforsgst) avgCOP() float64 {
+	sum := 0.0
+	l := 0
+	ts.copRing.Do(func(p any) {
+		if p == nil {
+			return
+		}
+		if val, ok := p.(float64); ok {
+			l++
+			sum += val
+		}
+	})
+	return sum / float64(l)
 }
 
 func (ts *Hogforsgst) State() (*state.State, error) {
@@ -86,17 +112,23 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 		return nil, err
 	}
 	if speed > 0.0 { // dont count COP if pump isnt running
-		ts.COP = *s.COP
+		ts.addCOP(*s.COP)
 	}
 
 	return s, nil
 }
 
 func (ts *Hogforsgst) allowHeatpump(price float64) bool {
-	//TODO kolla om vi behöver ta avg COP över längre tid?
-	allow := price/ts.COP < ts.cloudConfig.DistrictHeatingPrice
+	avgCOP := ts.avgCOP()
+	cop := avgCOP
+	if avgCOP < 2.0 {
+		logrus.Warn("COP is below 2.0")
+		cop = 2.0
+	}
+
+	allow := price/cop < ts.cloudConfig.DistrictHeatingPrice
 	logrus.WithFields(logrus.Fields{
-		"cop":           ts.COP,
+		"cop":           avgCOP,
 		"price":         price,
 		"districtprice": ts.cloudConfig.DistrictHeatingPrice,
 		"allow":         allow,

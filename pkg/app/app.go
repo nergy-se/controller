@@ -169,7 +169,7 @@ func (a *App) controllerLoop(ctx context.Context) {
 	scheduleTicker := time.NewTicker(time.Hour * 6)
 	refreshToken := time.NewTicker(time.Hour * 24)
 	metricsTicker := time.NewTicker(time.Second * 30)
-	logrus.Debug("scheduling first run in", delay)
+	logrus.Debug("scheduling first reconcile in", delay)
 	for {
 		select {
 		case <-metricsTicker.C:
