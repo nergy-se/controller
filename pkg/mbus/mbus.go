@@ -20,43 +20,68 @@ func New() *Mbus {
 	}
 }
 
-func (m *Mbus) Init() error {
-	c, err := gombus.DialSerial("/dev/ttyAMA0")
+func (m *Mbus) init() error {
 	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.conn != nil {
+		return nil
+	}
+	c, err := gombus.DialSerial("/dev/ttyAMA0")
+	if err != nil {
+		return err
+	}
 	m.conn = c
-	m.mutex.Unlock()
-	return err
+	return nil
 }
 
 func (m *Mbus) Close() error {
-	return m.conn.Close()
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.conn != nil {
+		err := m.conn.Close()
+		m.conn = nil
+		return err
+	}
+	return nil
 }
 
 func (m *Mbus) ReadValues(model, idStr string) (*meter.Data, error) {
-
+	err := m.init()
+	if err != nil {
+		return nil, err
+	}
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		return nil, err
 	}
 
-	frame, err := m.readPrimaryAddress(id)
+	frame, err := m.read(id)
 	if err != nil {
 		return nil, err
 	}
 
 	data := &meter.Data{
-		Time: time.Now(),
+		Id:    idStr,
+		Model: model,
+		Time:  time.Now(),
 	}
 	switch model {
 	case "garo-GNM3D-MBUS":
-		//TODO which frames a which?
 		data.Total_WH = frame.DataRecords[0].Value
+		data.Current_W = frame.DataRecords[2].Value
+		data.Current_VLL = frame.DataRecords[6].Value
+		data.Current_VLN = frame.DataRecords[7].Value
+		data.L1_A = frame.DataRecords[8].Value
+		data.L2_A = frame.DataRecords[9].Value
+		data.L3_A = frame.DataRecords[10].Value
 	}
 
 	return data, nil
 }
 
-func (m *Mbus) readPrimaryAddress(primaryAddr int) (*gombus.DecodedFrame, error) {
+func (m *Mbus) read(primaryAddr int) (*gombus.DecodedFrame, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	_, err := m.conn.Write(gombus.SndNKE(uint8(primaryAddr)))
 	if err != nil {
 		return nil, err
@@ -72,10 +97,5 @@ func (m *Mbus) readPrimaryAddress(primaryAddr int) (*gombus.DecodedFrame, error)
 		return nil, err
 	}
 
-	frame, err := gombus.ReadSingleFrame(m.conn, primaryAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	return frame, nil
+	return gombus.ReadSingleFrame(m.conn, primaryAddr)
 }

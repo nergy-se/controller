@@ -18,6 +18,7 @@ import (
 	"github.com/nergy-se/controller/pkg/controller/dummy"
 	"github.com/nergy-se/controller/pkg/controller/hogforsgst"
 	"github.com/nergy-se/controller/pkg/controller/thermiagenesis"
+	"github.com/nergy-se/controller/pkg/mbus"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/sirupsen/logrus"
 )
@@ -63,6 +64,7 @@ type App struct {
 	cliConfig   *v1config.CliConfig
 
 	controller controller.Controller
+	mbusClient *mbus.Mbus
 
 	activeAlarms *activeAlarms
 
@@ -76,12 +78,14 @@ func New(config *v1config.CliConfig) *App {
 		cliConfig:    config,
 		schedule:     v1config.NewConfig(),
 		activeAlarms: &activeAlarms{},
+		mbusClient:   mbus.New(),
 	}
 }
 
 func (a *App) Start(ctx context.Context) error {
 	a.ctx = ctx
-	err := a.setupConfig()
+
+	err = a.setupConfig()
 	if err != nil {
 		return err
 	}
@@ -196,6 +200,7 @@ func (a *App) doRefreshToken() {
 }
 
 func (a *App) doSendMetrics() {
+	a.sendMeterValues()
 	err := a.sendMetrics()
 	if err != nil {
 		logrus.Errorf("error sendMetrics: %s", err.Error())
@@ -221,7 +226,7 @@ func (a *App) doUpdateSchedule() {
 	}
 }
 
-// makes sure heatpump are in desired state
+// reconcile makes sure heatpump are in desired state
 func (a *App) reconcile() error {
 	logrus.Debug("reconcile heatpump")
 	current := a.schedule.Current()
@@ -247,20 +252,29 @@ func (a *App) sendMetrics() error {
 	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body), nil)
 }
 
-func (a *App) sendMeterValues() error {
-	//TODO data, err := mbus.ReadValues(model,id)
-	return nil
-	// state, err := a.controller.State()
-	// if err != nil {
-	// 	return err
-	// }
-	//
-	// body, err := json.Marshal(state)
-	// if err != nil {
-	// 	return err
-	// }
-	//
-	// return a.do("api/controller/meter-v1", "POST", nil, bytes.NewBuffer(body), nil)
+func (a *App) sendMeterValues() {
+
+	for _, meter := range a.cloudConfig.Meters {
+		if meter.InterfaceType != "mbus" {
+			continue
+		}
+		data, err := a.mbusClient.ReadValues(meter.Model, meter.PrimaryID)
+		if err != nil {
+			logrus.Errorf("error fetching mbus meter %s: %s", meter.PrimaryID, err)
+			continue
+		}
+		body, err := json.Marshal(data)
+		if err != nil {
+			logrus.Errorf("error marshal mbus meter %s: %s", meter.PrimaryID, err)
+			continue
+		}
+
+		err = a.do("api/controller/meter-v1", "POST", nil, bytes.NewBuffer(body), nil)
+		if err != nil {
+			logrus.Errorf("error POST mbus meter %s: %s", meter.PrimaryID, err)
+			continue
+		}
+	}
 }
 
 func (a *App) sendAlarms() error {
