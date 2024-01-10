@@ -84,8 +84,7 @@ func New(config *v1config.CliConfig) *App {
 
 func (a *App) Start(ctx context.Context) error {
 	a.ctx = ctx
-
-	err = a.setupConfig()
+	err := a.setupConfig()
 	if err != nil {
 		return err
 	}
