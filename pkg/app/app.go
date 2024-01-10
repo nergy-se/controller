@@ -247,6 +247,22 @@ func (a *App) sendMetrics() error {
 	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body), nil)
 }
 
+func (a *App) sendMeterValues() error {
+	//TODO data, err := mbus.ReadValues(model,id)
+	return nil
+	// state, err := a.controller.State()
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// body, err := json.Marshal(state)
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// return a.do("api/controller/meter-v1", "POST", nil, bytes.NewBuffer(body), nil)
+}
+
 func (a *App) sendAlarms() error {
 	alarms, err := a.controller.Alarms()
 	if err != nil {
@@ -361,6 +377,7 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 			if err != nil {
 				return err
 			}
+			// TODO reconnect mbus stuff here aswell? or not needed with serial tty?
 		}
 	}
 
