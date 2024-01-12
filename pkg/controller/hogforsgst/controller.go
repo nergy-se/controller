@@ -2,8 +2,10 @@ package hogforsgst
 
 import (
 	"container/ring"
+	"time"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
+	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
@@ -56,22 +58,22 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	s := &state.State{}
 	var err error
 
-	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(551))
+	s.BrineIn, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(551))
 	if err != nil {
 		return s, err
 	}
 
-	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister(553))
+	s.BrineOut, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(553))
 	if err != nil {
 		return s, err
 	}
 
-	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(555))
+	s.HeatCarrierForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(555))
 	if err != nil {
 		return s, err
 	}
 
-	s.PumpBrine, err = controller.Scale1itof(ts.client.ReadHoldingRegister(563))
+	s.PumpBrine, err = controller.Scale1itof(ts.client.ReadHoldingRegister16(563))
 	if err != nil {
 		return s, err
 	}
@@ -82,21 +84,21 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	// hetgas tillförd energi kw 971 1 dec
 	// ex (61.9+0.9) / 20.4kw
 
-	s.RadiatorForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister(283)) // 101TE41.2 Värme framledningstemperatur
+	s.RadiatorForward, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(283)) // 101TE41.2 Värme framledningstemperatur
 	if err != nil {
 		return s, err
 	}
 
-	s.RadiatorReturn, err = controller.Scale10itof(ts.client.ReadHoldingRegister(281)) // 101TE42 Värme returtemperatur
+	s.RadiatorReturn, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(281)) // 101TE42 Värme returtemperatur
 	if err != nil {
 		return s, err
 	}
 
-	s.Outdoor, err = controller.Scale10itof(ts.client.ReadHoldingRegister(275)) // 101TE00 Utetemperatur
+	s.Outdoor, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(275)) // 101TE00 Utetemperatur
 	if err != nil {
 		return s, err
 	}
-	gear, err := controller.Scale10itof(ts.client.ReadHoldingRegister(565))
+	gear, err := controller.Scale10itof(ts.client.ReadHoldingRegister16(565))
 	if err != nil {
 		return s, err
 	}
@@ -107,7 +109,7 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	speed := (float64(*gear) / 10.0) * 100 // it has 10 gears
 	s.Compressor = &speed
 
-	s.COP, err = controller.Scale10itof(ts.client.ReadHoldingRegister(408))
+	s.COP, err = controller.Scale10itof(ts.client.ReadHoldingRegister16(408))
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +118,63 @@ func (ts *Hogforsgst) State() (*state.State, error) {
 	}
 
 	return s, nil
+}
+
+func (ts *Hogforsgst) MeterData() ([]*meter.Data, error) {
+	now := time.Now()
+	meterElectricity := &meter.Data{
+		Time:  now,
+		Model: "hogforsgst_electric",
+		Id:    "1000",
+	}
+
+	meterHeat := &meter.Data{
+		Time:  now,
+		Model: "hogforsgst_heat",
+		Id:    "1001",
+	}
+	meterHeatHGW := &meter.Data{
+		Time:  now,
+		Model: "hogforsgst_heat_hgw",
+		Id:    "1002",
+	}
+	v, err := ts.client.ReadHoldingRegister32(1935) // kw
+	if err != nil {
+		return nil, err
+	}
+	meterElectricity.Current_W = (float64(v) / 10.0) * 1000
+
+	v, err = ts.client.ReadHoldingRegister32(1933) // kWh
+	if err != nil {
+		return nil, err
+	}
+	meterElectricity.Total_WH = (float64(v) / 10.0) * 1000
+
+	v, err = ts.client.ReadHoldingRegister32(974) // kw
+	if err != nil {
+		return nil, err
+	}
+	meterHeat.Current_W = (float64(v) / 10.0) * 1000
+
+	v, err = ts.client.ReadHoldingRegister32(1603) // MWh
+	if err != nil {
+		return nil, err
+	}
+	meterHeat.Total_WH = (float64(v) / 100.0) * 1000000
+
+	v, err = ts.client.ReadHoldingRegister32(970) // kw
+	if err != nil {
+		return nil, err
+	}
+	meterHeatHGW.Current_W = (float64(v) / 10.0) * 1000
+
+	v, err = ts.client.ReadHoldingRegister32(972) // MWh
+	if err != nil {
+		return nil, err
+	}
+	meterHeatHGW.Total_WH = (float64(v) / 100.0) * 1000000
+
+	return []*meter.Data{meterElectricity, meterHeat, meterHeatHGW}, nil
 }
 
 func (ts *Hogforsgst) allowHeatpump(price float64) bool {

@@ -253,6 +253,28 @@ func (a *App) sendMetrics() error {
 
 func (a *App) sendMeterValues() {
 
+	if con, ok := a.controller.(*hogforsgst.Hogforsgst); ok {
+		datas, err := con.MeterData()
+		if err != nil {
+			logrus.Errorf("error fetching hogforsgst meterdata: %s", err)
+		}
+
+		for _, data := range datas {
+			body, err := json.Marshal(data)
+			if err != nil {
+				logrus.Errorf("error marshal %s meter %s: %s", data.Model, data.Id, err)
+				continue
+			}
+
+			err = a.do("api/controller/meter-v1", "POST", nil, bytes.NewBuffer(body), nil)
+			if err != nil {
+				logrus.Errorf("error POST %s meter %s: %s", data.Model, data.Id, err)
+				continue
+			}
+		}
+
+	}
+
 	for _, meter := range a.cloudConfig.Meters {
 		if meter.InterfaceType != "mbus" {
 			continue

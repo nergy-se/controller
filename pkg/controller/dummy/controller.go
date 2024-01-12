@@ -91,6 +91,8 @@ func (ts *Dummy) State() (*state.State, error) {
 		PumpBrine:          nil,
 		PumpHeat:           nil,
 		PumpRadiator:       nil,
+		HeatingAllowed:     Pointer(false),
+		HotwaterAllowed:    Pointer(true),
 	}
 
 	return s, nil

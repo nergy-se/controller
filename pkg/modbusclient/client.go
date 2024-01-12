@@ -14,7 +14,8 @@ import (
 
 type Client interface {
 	ReadInputRegister(address uint16) (int, error)
-	ReadHoldingRegister(address uint16) (int, error)
+	ReadHoldingRegister32(address uint16) (int, error)
+	ReadHoldingRegister16(address uint16) (int, error)
 	ReadDiscreteInput(address uint16) ([]byte, error)
 	WriteSingleRegister(address, value uint16) (results []byte, err error)
 	WriteSingleCoil(address, value uint16) (int, error)
@@ -62,8 +63,16 @@ func (c *client) ReadInputRegister(address uint16) (int, error) {
 	return Decode(b), err
 }
 
-func (c *client) ReadHoldingRegister(address uint16) (int, error) {
-	b, err := c.client.ReadHoldingRegisters(address, 1)
+func (c *client) ReadHoldingRegister16(address uint16) (int, error) {
+	return c.readHoldingRegister(address, 1)
+}
+
+func (c *client) ReadHoldingRegister32(address uint16) (int, error) {
+	return c.readHoldingRegister(address, 2)
+}
+
+func (c *client) readHoldingRegister(address, count uint16) (int, error) {
+	b, err := c.client.ReadHoldingRegisters(address, count)
 	if err != nil {
 		c.closeIfNeeded(err)
 		err = fmt.Errorf("error reading address %d: %w", address, err)
@@ -98,11 +107,29 @@ func (c *client) WriteSingleCoil(address, value uint16) (int, error) {
 	return Decode(b), err
 }
 
+// Decode High byte first high word first (big endian)
 func Decode(data []byte) int {
-	var i int16
-	buf := bytes.NewBuffer(data)
-	binary.Read(buf, binary.BigEndian, &i)
-	return int(i)
+
+	switch len(data) {
+	case 1:
+		var i int8
+		binary.Read(bytes.NewBuffer(data), binary.BigEndian, &i)
+		return int(i)
+	case 2:
+		var i int16
+		binary.Read(bytes.NewBuffer(data), binary.BigEndian, &i)
+		return int(i)
+	case 4:
+		var i int32
+		binary.Read(bytes.NewBuffer(data), binary.BigEndian, &i)
+		return int(i)
+	case 8:
+		var i int64
+		binary.Read(bytes.NewBuffer(data), binary.BigEndian, &i)
+		return int(i)
+	}
+
+	return 0
 }
 
 func CoilValue(b bool) uint16 {

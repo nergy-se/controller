@@ -139,6 +139,8 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	// input reg 18 System supply line calculated set point just nu 47.18
 	// write single coil(5) enable heat 9
 	// write single coil(5) enable tap water 8
+	// inputreg 4 avilable gears == 12
+	// inputreg 61 curren gear == 5
 
 	// operational mode WriteSingleRegister 0 1: OFF, 2: Standby, 3: ON/Auto
 
