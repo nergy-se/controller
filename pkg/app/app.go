@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,6 +58,11 @@ func (a *activeAlarms) Clear() bool {
 	return hasActive
 }
 
+type postRequest struct {
+	url  string
+	body []byte
+}
+
 type App struct {
 	wg          *sync.WaitGroup
 	schedule    *v1config.Config
@@ -67,6 +73,8 @@ type App struct {
 	mbusClient *mbus.Mbus
 
 	activeAlarms *activeAlarms
+
+	sendQueue chan *postRequest
 
 	ctx            context.Context
 	stopController context.CancelFunc
@@ -79,6 +87,7 @@ func New(config *v1config.CliConfig) *App {
 		schedule:     v1config.NewConfig(),
 		activeAlarms: &activeAlarms{},
 		mbusClient:   mbus.New(),
+		sendQueue:    make(chan *postRequest, 20000),
 	}
 }
 
@@ -96,6 +105,36 @@ func (a *App) Start(ctx context.Context) error {
 
 	a.wg.Add(1)
 	go a.controllerLoop(ctx)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case req := <-a.sendQueue:
+				if ctx.Err() != nil {
+					return
+				}
+				code, err := a.do(req.url, http.MethodPost, nil, bytes.NewBuffer(req.body), nil, true) // dont check x-fetch on retries.
+
+				if err != nil {
+					logrus.Errorf("error POST retry %s: %s", req.url, err)
+				}
+				if code != 200 {
+					logrus.Warnf("error retrying %s: %d adding to retry queue again", req.url, code)
+					select {
+					case a.sendQueue <- &postRequest{
+						url:  req.url,
+						body: req.body,
+					}:
+					default:
+						logrus.Error(fmt.Errorf("%w %w", err, ErrQueueFull))
+					}
+					time.Sleep(time.Second * 10)
+				}
+			}
+		}
+	}()
 	return nil
 }
 
@@ -242,14 +281,18 @@ func (a *App) sendMetrics() error {
 	if err != nil {
 		return err
 	}
+	state.Time = time.Now()
 
 	body, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
 
-	return a.do("api/controller/metrics-v1", "POST", nil, bytes.NewBuffer(body), nil)
+	err = a.postWithRetry("api/controller/metrics-v1", body)
+	return err
 }
+
+var ErrQueueFull = errors.New("queue full")
 
 func (a *App) sendMeterValues() {
 
@@ -266,7 +309,7 @@ func (a *App) sendMeterValues() {
 				continue
 			}
 
-			err = a.do("api/controller/meter-v1", "POST", nil, bytes.NewBuffer(body), nil)
+			err = a.postWithRetry("api/controller/meter-v1", body)
 			if err != nil {
 				logrus.Errorf("error POST %s meter %s: %s", data.Model, data.Id, err)
 				continue
@@ -290,7 +333,7 @@ func (a *App) sendMeterValues() {
 			continue
 		}
 
-		err = a.do("api/controller/meter-v1", "POST", nil, bytes.NewBuffer(body), nil)
+		err = a.postWithRetry("api/controller/meter-v1", body)
 		if err != nil {
 			logrus.Errorf("error POST mbus meter %s: %s", meter.PrimaryID, err)
 			continue
@@ -307,7 +350,8 @@ func (a *App) sendAlarms() error {
 	if len(alarms) == 0 {
 		hadActive := a.activeAlarms.Clear()
 		if hadActive {
-			return a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil)
+			_, err := a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil, false)
+			return err
 		}
 		return nil
 	}
@@ -323,7 +367,7 @@ func (a *App) sendAlarms() error {
 			continue
 		}
 
-		err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil)
+		_, err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil, false)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -334,7 +378,7 @@ func (a *App) sendAlarms() error {
 
 func (a *App) refreshToken() error {
 	resp := &struct{ Token string }{}
-	err := a.do("api/token-v1", "POST", resp, nil, nil)
+	_, err := a.do("api/token-v1", "POST", resp, nil, nil, false)
 	if err != nil {
 		return err
 	}
@@ -345,7 +389,7 @@ func (a *App) refreshToken() error {
 
 func (a *App) updateSchedule() error {
 	schedule := make(v1config.Schedule)
-	err := a.do("api/controller/schedule-v1", "GET", &schedule, nil, nil)
+	_, err := a.do("api/controller/schedule-v1", "GET", &schedule, nil, nil, false)
 
 	a.schedule.MergeSchedule(schedule)
 	a.schedule.ClearOld()
@@ -359,16 +403,34 @@ func (a *App) fetchConfig(fromXFetch bool) (*v1config.CloudConfig, error) {
 		header = make(http.Header)
 		header.Set("x-fetch", "ControllerConfig")
 	}
-	err := a.do("api/controller/config-v1", "GET", response, nil, header)
+	_, err := a.do("api/controller/config-v1", "GET", response, nil, header, false)
 	return response, err
 }
 
-func (a *App) do(u string, method string, dst any, body io.Reader, header http.Header) error {
+func (a *App) postWithRetry(u string, body []byte) error {
+	code, err := a.do(u, http.MethodPost, nil, bytes.NewBuffer(body), nil, false)
+
+	if code != 200 {
+		logrus.Warnf("error %s: %d adding to retry queue", u, code)
+		select {
+		case a.sendQueue <- &postRequest{
+			url:  u,
+			body: body,
+		}:
+		default:
+			return fmt.Errorf("%w %w", err, ErrQueueFull)
+		}
+	}
+
+	return err
+}
+
+func (a *App) do(u string, method string, dst any, body io.Reader, header http.Header, disableXFetch bool) (int, error) {
 	logrus.Debugf("%s to %s", method, u)
 	u = fmt.Sprintf("%s/%s", a.cliConfig.Server, u)
 	req, err := http.NewRequest(method, u, body)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -383,19 +445,19 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode > 299 {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return resp.StatusCode, err
 		}
-		return fmt.Errorf("error %s %s StatusCode: %d, body: %s", method, u, resp.StatusCode, string(body))
+		return resp.StatusCode, fmt.Errorf("error %s %s StatusCode: %d, body: %s", method, u, resp.StatusCode, string(body))
 	}
 
-	if resp.Header.Get("x-fetch") != "" {
+	if resp.Header.Get("x-fetch") != "" && !disableXFetch {
 		// if server indicated we need new config...
 		keys := strings.Split(resp.Header.Get("x-fetch"), ",")
 		logrus.Debug("got x-fetch with keys: ", keys)
@@ -406,18 +468,18 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 
 			err = a.syncCloudConfig(true)
 			if err != nil {
-				return err
+				return resp.StatusCode, err
 			}
 			err = a.setupController(a.ctx)
 			if err != nil {
-				return err
+				return resp.StatusCode, err
 			}
 			// TODO reconnect mbus stuff here aswell? or not needed with serial tty?
 		}
 	}
 
 	if dst == nil {
-		return nil
+		return resp.StatusCode, nil
 	}
-	return json.NewDecoder(resp.Body).Decode(dst)
+	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(dst)
 }
