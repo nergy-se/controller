@@ -10,6 +10,7 @@ import (
 	"github.com/koding/multiconfig"
 	"github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/app"
+	"github.com/nergy-se/controller/pkg/version"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,6 +29,11 @@ func Run(ctx context.Context) error {
 	err := multiconfig.New().Load(config)
 	if err != nil {
 		return err
+	}
+
+	if config.Version {
+		fmt.Println(version.Version)
+		return nil
 	}
 	lvl, err := logrus.ParseLevel(config.LogLevel)
 	if err != nil {

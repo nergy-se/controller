@@ -21,6 +21,8 @@ type CliConfig struct {
 
 	LogLevel string `default:"info"`
 
+	Version bool
+
 	mutex sync.RWMutex
 }
 
