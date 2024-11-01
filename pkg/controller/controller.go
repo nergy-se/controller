@@ -2,11 +2,14 @@ package controller
 
 import (
 	"github.com/nergy-se/controller/pkg/api/v1/config"
+	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/state"
 )
 
 type Controller interface {
 	Reconcile(current *config.HourConfig) error
+
+	ReconcileFromMeter(data meter.Data) error
 
 	// fetch state. Used for metrics to cloud
 	State() (*state.State, error)

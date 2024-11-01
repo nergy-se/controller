@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
+	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
@@ -130,4 +131,7 @@ func (ts *Dummy) Alarms() ([]string, error) {
 	ts.Lock()
 	defer ts.Unlock()
 	return ts.alarms, nil
+}
+func (ts *Dummy) ReconcileFromMeter(data meter.Data) error {
+	return nil
 }

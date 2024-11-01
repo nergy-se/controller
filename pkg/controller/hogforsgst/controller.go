@@ -2,6 +2,7 @@ package hogforsgst
 
 import (
 	"container/ring"
+	"fmt"
 	"time"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
@@ -148,6 +149,9 @@ func (ts *Hogforsgst) MeterData() ([]*meter.Data, error) {
 	if err != nil {
 		return nil, err
 	}
+	if v == 0.0 {
+		return nil, fmt.Errorf("got zero value from ReadHoldingRegister32(1933)")
+	}
 	meterElectricity.Total_WH = (float64(v) / 10.0) * 1000
 
 	v, err = ts.client.ReadHoldingRegister32(974) // kw
@@ -160,6 +164,9 @@ func (ts *Hogforsgst) MeterData() ([]*meter.Data, error) {
 	if err != nil {
 		return nil, err
 	}
+	if v == 0.0 {
+		return nil, fmt.Errorf("got zero value from ReadHoldingRegister32(1603)")
+	}
 	meterHeat.Total_WH = (float64(v) / 100.0) * 1000000
 
 	v, err = ts.client.ReadHoldingRegister32(970) // kw
@@ -171,6 +178,9 @@ func (ts *Hogforsgst) MeterData() ([]*meter.Data, error) {
 	v, err = ts.client.ReadHoldingRegister32(972) // MWh
 	if err != nil {
 		return nil, err
+	}
+	if v == 0.0 {
+		return nil, fmt.Errorf("got zero value from ReadHoldingRegister32(972)")
 	}
 	meterHeatHGW.Total_WH = (float64(v) / 100.0) * 1000000
 
@@ -224,6 +234,10 @@ func (ts *Hogforsgst) Reconcile(current *config.HourConfig) error {
 func (ts *Hogforsgst) Alarms() ([]string, error) {
 	// TODO
 	return nil, nil
+}
+func (ts *Hogforsgst) ReconcileFromMeter(data meter.Data) error {
+	// TODO
+	return nil
 }
 func boolPointer(v bool) *bool {
 	return &v

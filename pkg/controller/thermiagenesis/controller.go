@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
+	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
@@ -231,6 +232,11 @@ func (ts *Thermiagenesis) boostHotwater(b bool) error {
 	}
 	return nil
 
+}
+
+func (ts *Thermiagenesis) ReconcileFromMeter(data meter.Data) error {
+	// TODO
+	return nil
 }
 
 func boolPointer(v bool) *bool {

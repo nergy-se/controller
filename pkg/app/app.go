@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/goburrow/modbus"
+	mqttv2 "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/nergy-se/controller/pkg/alarm"
 	v1config "github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/api/v1/types"
 	"github.com/nergy-se/controller/pkg/controller"
@@ -21,41 +24,12 @@ import (
 	"github.com/nergy-se/controller/pkg/controller/thermiagenesis"
 	"github.com/nergy-se/controller/pkg/mbus"
 	"github.com/nergy-se/controller/pkg/modbusclient"
+	"github.com/nergy-se/controller/pkg/mqtt"
 	"github.com/sirupsen/logrus"
 )
 
 var httpClient = &http.Client{
 	Timeout: time.Second * 30,
-}
-
-type activeAlarms struct {
-	activeAlarms []string
-	sync.RWMutex
-}
-
-// Add adds string to alarm list and returns true if it was added. returns false if it already exists.
-func (a *activeAlarms) Add(alarm string) bool {
-	a.Lock()
-	defer a.Unlock()
-	for _, activeAlarm := range a.activeAlarms {
-		if activeAlarm == alarm {
-			return false
-		}
-	}
-
-	a.activeAlarms = append(a.activeAlarms, alarm)
-	return true
-}
-
-func (a *activeAlarms) Clear() bool {
-	hasActive := false
-	a.Lock()
-	if len(a.activeAlarms) > 0 {
-		hasActive = true
-		a.activeAlarms = nil
-	}
-	a.Unlock()
-	return hasActive
 }
 
 type postRequest struct {
@@ -72,7 +46,7 @@ type App struct {
 	controller controller.Controller
 	mbusClient *mbus.Mbus
 
-	activeAlarms *activeAlarms
+	activeAlarms *alarm.ActiveAlarms
 
 	sendQueue chan *postRequest
 
@@ -85,7 +59,7 @@ func New(config *v1config.CliConfig) *App {
 		wg:           &sync.WaitGroup{},
 		cliConfig:    config,
 		schedule:     v1config.NewConfig(),
-		activeAlarms: &activeAlarms{},
+		activeAlarms: &alarm.ActiveAlarms{},
 		mbusClient:   mbus.New(),
 		sendQueue:    make(chan *postRequest, 20000),
 	}
@@ -157,10 +131,10 @@ func (a *App) setupConfig() error {
 		}
 		return nil
 	}
-	return a.syncCloudConfig(false)
+	return a.syncCloudConfig("")
 }
 
-func (a *App) syncCloudConfig(fromXFetch bool) error {
+func (a *App) syncCloudConfig(fromXFetch string) error {
 	cloudConfig, err := a.fetchConfig(fromXFetch)
 	if err != nil {
 		return err
@@ -173,8 +147,14 @@ func (a *App) setupController(pCtx context.Context) error {
 	if a.stopController != nil {
 		a.stopController()
 	}
-	ctx, cancel := context.WithCancel(pCtx)
-	a.stopController = cancel
+	var ctx context.Context
+	ctx, a.stopController = context.WithCancel(pCtx)
+
+	err := a.StartMQTTServer(ctx)
+	if err != nil {
+		return err
+	}
+
 	switch a.cloudConfig.HeatControlType {
 	case types.HeatControlTypeThermiaGenesis:
 		handler := modbus.NewTCPClientHandler(a.cloudConfig.Address)
@@ -198,6 +178,41 @@ func (a *App) setupController(pCtx context.Context) error {
 
 func (a *App) Wait() {
 	a.wg.Wait()
+}
+
+func (a *App) StartMQTTServer(ctx context.Context) error {
+	var server *mqttv2.Server
+	var err error
+	for _, m := range a.cloudConfig.Meters {
+		if m.InterfaceType == "mqtt" {
+			if server == nil {
+				// TODO allow incoming TCP on 1883 on controllerimage iptables rules.
+				server, err = mqtt.Start(ctx, a.wg)
+				if err != nil {
+					return err
+				}
+			}
+			if m.Model == "p1ib" {
+				err := server.Subscribe("p1ib/sensor_state", 1, func(cl *mqttv2.Client, sub packets.Subscription, pk packets.Packet) {
+					if pk.TopicName == "p1ib/sensor_state" {
+						//TODO send to backend and save locally for use in controller?
+						data := &mqtt.P1ib{}
+						err := json.Unmarshal(pk.Payload, data)
+						if err != nil {
+							logrus.Errorf("error unmarshal p1ib payload: %s", err)
+							return
+						}
+
+						logrus.Info("inline client received message from subscription", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
+					}
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (a *App) controllerLoop(ctx context.Context) {
@@ -303,6 +318,7 @@ func (a *App) sendMeterValues() {
 		}
 
 		for _, data := range datas {
+			//TODO call a.controller.ReconcileFromMeter...
 			body, err := json.Marshal(data)
 			if err != nil {
 				logrus.Errorf("error marshal %s meter %s: %s", data.Model, data.Id, err)
@@ -315,7 +331,6 @@ func (a *App) sendMeterValues() {
 				continue
 			}
 		}
-
 	}
 
 	for _, meter := range a.cloudConfig.Meters {
@@ -327,6 +342,7 @@ func (a *App) sendMeterValues() {
 			logrus.Errorf("error fetching mbus meter %s: %s", meter.PrimaryID, err)
 			continue
 		}
+		//TODO call a.controller.ReconcileFromMeter...
 		body, err := json.Marshal(data)
 		if err != nil {
 			logrus.Errorf("error marshal mbus meter %s: %s", meter.PrimaryID, err)
@@ -396,10 +412,10 @@ func (a *App) updateSchedule() error {
 	return err
 }
 
-func (a *App) fetchConfig(fromXFetch bool) (*v1config.CloudConfig, error) {
+func (a *App) fetchConfig(fromXFetch string) (*v1config.CloudConfig, error) {
 	response := &v1config.CloudConfig{}
 	var header http.Header
-	if fromXFetch {
+	if fromXFetch != "" {
 		header = make(http.Header)
 		header.Set("x-fetch", "ControllerConfig")
 	}
@@ -466,7 +482,7 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 				continue
 			}
 
-			err = a.syncCloudConfig(true)
+			err = a.syncCloudConfig(key)
 			if err != nil {
 				return resp.StatusCode, err
 			}
