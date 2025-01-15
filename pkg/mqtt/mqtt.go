@@ -2,9 +2,7 @@ package mqtt
 
 import (
 	"context"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	mqttv2 "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
@@ -16,10 +14,6 @@ func Start(ctx context.Context, wg *sync.WaitGroup) (*mqttv2.Server, error) {
 	server := mqttv2.New(&mqttv2.Options{
 		InlineClient: true,
 	})
-	// Create signals channel to run server until interrupted
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-
-	defer cancel()
 
 	// Allow all connections.
 	_ = server.AddHook(new(auth.AllowHook), nil)

@@ -2,8 +2,6 @@ module github.com/nergy-se/controller
 
 go 1.21
 
-toolchain go1.23.2
-
 require (
 	github.com/goburrow/modbus v0.1.0
 	github.com/jonaz/gombus v0.0.0-20240104212355-b2bf5440f211

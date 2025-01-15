@@ -52,6 +52,8 @@ type App struct {
 
 	ctx            context.Context
 	stopController context.CancelFunc
+
+	mqttServer *mqttv2.Server
 }
 
 func New(config *v1config.CliConfig) *App {
@@ -181,20 +183,21 @@ func (a *App) Wait() {
 }
 
 func (a *App) StartMQTTServer(ctx context.Context) error {
-	var server *mqttv2.Server
 	var err error
+	hasAnyMQTT := false
 	for _, m := range a.cloudConfig.Meters {
 		if m.InterfaceType == "mqtt" {
-			if server == nil {
+			hasAnyMQTT = true
+			if a.mqttServer == nil {
 				// TODO allow incoming TCP on 1883 on controllerimage iptables rules.
-				server, err = mqtt.Start(ctx, a.wg)
+				a.mqttServer, err = mqtt.Start(ctx, a.wg)
 				if err != nil {
 					return err
 				}
-			}
-			if m.Model == "p1ib" {
-				err := server.Subscribe("p1ib/sensor_state", 1, func(cl *mqttv2.Client, sub packets.Subscription, pk packets.Packet) {
-					if pk.TopicName == "p1ib/sensor_state" {
+				if m.Model == "p1ib" {
+					hasAnyMQTT = true
+					err := a.mqttServer.Subscribe("p1ib/sensor_state", 1, func(cl *mqttv2.Client, sub packets.Subscription, pk packets.Packet) {
+						// if pk.TopicName == "p1ib/sensor_state" {
 						//TODO send to backend and save locally for use in controller?
 						data := &mqtt.P1ib{}
 						err := json.Unmarshal(pk.Payload, data)
@@ -203,14 +206,20 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 							return
 						}
 
-						logrus.Info("inline client received message from subscription", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
+						logrus.Info("mqtt message", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
+						logrus.Infof("meterData: %#v\n", data.AsMeterData(m.PrimaryID))
+						// }
+					})
+					if err != nil {
+						return err
 					}
-				})
-				if err != nil {
-					return err
 				}
 			}
 		}
+	}
+
+	if !hasAnyMQTT && a.mqttServer != nil {
+		a.mqttServer.Close()
 	}
 	return nil
 }
