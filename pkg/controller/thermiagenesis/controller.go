@@ -172,6 +172,7 @@ func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
 	if ts.cloudConfig.DistrictHeatingPrice == 0.0 { // control based on levels.
 		ts.heatingAllowed = current.Heating
 		ts.hotwaterAllowed = current.Hotwater
+		logrus.WithFields(logrus.Fields{"heating": current.Heating, "hotwater": current.Hotwater}).Debugf("thermiagenesis: Reconcile")
 		err := ts.allowHeating(current.Heating)
 		if err != nil {
 			return err

@@ -73,6 +73,7 @@ func (a *App) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.doUpdateSchedule()
 
 	err = a.setupController(ctx)
 	if err != nil {
@@ -175,6 +176,9 @@ func (a *App) setupController(pCtx context.Context) error {
 		a.controller = dummy.New(ctx)
 		logrus.Debug("configured controller dummy")
 	}
+
+	// We must reconcile after controller has been setup otherwise allow values in state can mismatch
+	a.doReconcile()
 	return nil
 }
 
@@ -228,8 +232,6 @@ func (a *App) controllerLoop(ctx context.Context) {
 	defer a.wg.Done()
 	delay := nextDelay()
 	timer := time.NewTimer(delay)
-	a.doUpdateSchedule()
-	a.doReconcile()
 	a.doSendMetrics()
 
 	scheduleTicker := time.NewTicker(time.Hour * 6)
