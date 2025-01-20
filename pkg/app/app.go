@@ -153,7 +153,7 @@ func (a *App) setupController(pCtx context.Context) error {
 	var ctx context.Context
 	ctx, a.stopController = context.WithCancel(pCtx)
 
-	err := a.StartMQTTServer(ctx)
+	err := a.StartMQTTServer(pCtx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
 	if err != nil {
 		return err
 	}
@@ -186,6 +186,7 @@ func (a *App) Wait() {
 	a.wg.Wait()
 }
 
+// TODO start mqtt server if any mqtt config. then have separate function to do the Subscriptions based on whith meter (p1ib etc...)
 func (a *App) StartMQTTServer(ctx context.Context) error {
 	var err error
 	hasAnyMQTT := false
