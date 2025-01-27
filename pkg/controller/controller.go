@@ -10,6 +10,7 @@ type Controller interface {
 	Reconcile(current *config.HourConfig) error
 
 	ReconcileFromMeter(data meter.Data) error
+	GetHeatCurve() ([]float64, error)
 
 	// fetch state. Used for metrics to cloud
 	State() (*state.State, error)

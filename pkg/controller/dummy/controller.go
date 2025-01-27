@@ -135,3 +135,7 @@ func (ts *Dummy) Alarms() ([]string, error) {
 func (ts *Dummy) ReconcileFromMeter(data meter.Data) error {
 	return nil
 }
+func (ts *Dummy) GetHeatCurve() ([]float64, error) {
+	// TODO
+	return nil, nil
+}

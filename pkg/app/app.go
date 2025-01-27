@@ -67,6 +67,22 @@ func New(config *v1config.CliConfig) *App {
 	}
 }
 
+func (a *App) sendHeavCurve(data []float64, adjust float64) {
+	type curveData struct {
+		HeatCurve       []float64 `json:"heatCurve"`
+		HeatCurveAdjust float64   `json:"heatCurveAdjust"`
+	}
+	body, err := json.Marshal(curveData{HeatCurve: data, HeatCurveAdjust: adjust})
+	if err != nil {
+		logrus.Errorf("error marshal curveData: %s", err)
+		return
+	}
+	err = a.postWithRetry("api/controller/heatcurve-v1", body)
+	if err != nil {
+		logrus.Errorf("error sending heatcurve-v1 to cloud: %s", err.Error())
+	}
+}
+
 func (a *App) Start(ctx context.Context) error {
 	a.ctx = ctx
 	err := a.setupConfig()
@@ -78,6 +94,15 @@ func (a *App) Start(ctx context.Context) error {
 	err = a.setupController(ctx)
 	if err != nil {
 		return err
+	}
+	if con, ok := a.controller.(*thermiagenesis.Thermiagenesis); ok {
+		curve, err := con.GetHeatCurve()
+		if err != nil {
+			logrus.Errorf("error fetching heatcurve: %s", err.Error())
+		} else {
+			a.sendHeavCurve(curve, 0)
+		}
+		// curl -X POST localhost:8080/api/controller/heatcurve-v1 --data '{"heatCurve":[15,20,15,4,5,6,10], "heatCurveAdjust":0}'
 	}
 
 	a.wg.Add(1)
@@ -134,16 +159,25 @@ func (a *App) setupConfig() error {
 		}
 		return nil
 	}
-	return a.syncCloudConfig("")
+	_, err = a.syncCloudConfig("")
+
+	return err
 }
 
-func (a *App) syncCloudConfig(fromXFetch string) error {
+func (a *App) syncCloudConfig(fromXFetch string) (bool, error) {
 	cloudConfig, err := a.fetchConfig(fromXFetch)
 	if err != nil {
-		return err
+		return false, err
 	}
+	controllerChanged := a.cloudConfig == nil || cloudConfig.HeatControlType != a.cloudConfig.HeatControlType || cloudConfig.Address != a.cloudConfig.Address
 	a.cloudConfig = cloudConfig
-	return nil
+
+	err = a.StartMQTTServer(a.ctx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
+	if err != nil {
+		return false, err
+	}
+
+	return controllerChanged, nil
 }
 
 func (a *App) setupController(pCtx context.Context) error {
@@ -152,11 +186,6 @@ func (a *App) setupController(pCtx context.Context) error {
 	}
 	var ctx context.Context
 	ctx, a.stopController = context.WithCancel(pCtx)
-
-	err := a.StartMQTTServer(pCtx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
-	if err != nil {
-		return err
-	}
 
 	switch a.cloudConfig.HeatControlType {
 	case types.HeatControlTypeThermiaGenesis:
@@ -269,6 +298,21 @@ func (a *App) doSendMetrics() {
 	err := a.sendMetrics()
 	if err != nil {
 		logrus.Errorf("error sendMetrics: %s", err.Error())
+		if strings.Contains(err.Error(), "error fetching state:") {
+			// try to get new config in case we changed it and are in a reconnect loop.
+			controllerChanged, err := a.syncCloudConfig("")
+			if err != nil {
+				logrus.Errorf("error syncCloudConfig: %s", err.Error())
+			}
+
+			if !controllerChanged {
+				return
+			}
+			err = a.setupController(a.ctx)
+			if err != nil {
+				logrus.Errorf("error setupController: %s", err.Error())
+			}
+		}
 	}
 }
 func (a *App) doSendAlarms() {
@@ -306,7 +350,7 @@ func (a *App) reconcile() error {
 func (a *App) sendMetrics() error {
 	state, err := a.controller.State()
 	if err != nil {
-		return err
+		return fmt.Errorf("error fetching state: %w", err)
 	}
 	state.Time = time.Now()
 
@@ -378,7 +422,7 @@ func (a *App) sendAlarms() error {
 	if len(alarms) == 0 {
 		hadActive := a.activeAlarms.Clear()
 		if hadActive {
-			_, err := a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil, false)
+			_, err := a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil, true)
 			return err
 		}
 		return nil
@@ -395,7 +439,7 @@ func (a *App) sendAlarms() error {
 			continue
 		}
 
-		_, err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil, false)
+		_, err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil, true)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -429,9 +473,9 @@ func (a *App) fetchConfig(fromXFetch string) (*v1config.CloudConfig, error) {
 	var header http.Header
 	if fromXFetch != "" {
 		header = make(http.Header)
-		header.Set("x-fetch", "ControllerConfig")
+		header.Set("x-fetch", fromXFetch)
 	}
-	_, err := a.do("api/controller/config-v1", "GET", response, nil, header, false)
+	_, err := a.do("api/controller/config-v1", "GET", response, nil, header, true)
 	return response, err
 }
 
@@ -494,9 +538,12 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 				continue
 			}
 
-			err = a.syncCloudConfig(key)
+			controllerChanged, err := a.syncCloudConfig(key)
 			if err != nil {
 				return resp.StatusCode, err
+			}
+			if !controllerChanged {
+				return resp.StatusCode, nil
 			}
 			err = a.setupController(a.ctx)
 			if err != nil {

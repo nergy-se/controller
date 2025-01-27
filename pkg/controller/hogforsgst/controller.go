@@ -235,6 +235,10 @@ func (ts *Hogforsgst) Alarms() ([]string, error) {
 	// TODO
 	return nil, nil
 }
+func (ts *Hogforsgst) GetHeatCurve() ([]float64, error) {
+	// TODO
+	return nil, nil
+}
 func (ts *Hogforsgst) ReconcileFromMeter(data meter.Data) error {
 	// TODO
 	return nil
