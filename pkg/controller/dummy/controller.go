@@ -128,6 +128,7 @@ func (ts *Dummy) boostHotwater(b bool) error {
 }
 
 func (ts *Dummy) Alarms() ([]string, error) {
+	logrus.Info("dummy: Alarms")
 	ts.Lock()
 	defer ts.Unlock()
 	return ts.alarms, nil
@@ -137,5 +138,15 @@ func (ts *Dummy) ReconcileFromMeter(data meter.Data) error {
 }
 func (ts *Dummy) GetHeatCurve() ([]float64, error) {
 	// TODO
-	return nil, nil
+	logrus.Info("dummy: GetHeatCurve returning 21, 22, 23, 24, 25, 26, 27")
+	return []float64{21, 22, 23, 24, 25, 26, 27}, nil
+}
+
+func (ts *Dummy) SetHeatCurve(curve []float64) error {
+	var address uint16 = 6
+	for _, temp := range curve {
+		logrus.Infof("dummy: set address %d temp %d", address, uint16(temp*100))
+		address++
+	}
+	return nil
 }

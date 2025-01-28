@@ -235,6 +235,21 @@ func (ts *Thermiagenesis) boostHotwater(b bool) error {
 
 }
 
+func (ts *Thermiagenesis) SetHeatCurve(curve []float64) error {
+	if len(curve) != 7 {
+		return fmt.Errorf("expected 7 curves got: %#v", len(curve))
+	}
+	var address uint16 = 6
+	for _, temp := range curve {
+		_, err := ts.client.WriteSingleRegister(address, uint16(temp*100))
+		address++
+		if err != nil {
+			return fmt.Errorf("error writing heatcurve address %d: %w", address, err)
+		}
+	}
+	return nil
+}
+
 func (ts *Thermiagenesis) GetHeatCurve() ([]float64, error) {
 	// 5 Comfort wheel setting
 	// 6 Set point heat curve, Y-coordinate 1 (highest outdoor temperature)

@@ -11,6 +11,7 @@ type Controller interface {
 
 	ReconcileFromMeter(data meter.Data) error
 	GetHeatCurve() ([]float64, error)
+	SetHeatCurve([]float64) error
 
 	// fetch state. Used for metrics to cloud
 	State() (*state.State, error)

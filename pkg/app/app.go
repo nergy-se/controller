@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -67,7 +68,10 @@ func New(config *v1config.CliConfig) *App {
 	}
 }
 
-func (a *App) sendHeavCurve(data []float64, adjust float64) {
+func (a *App) sendHeatCurve(data []float64, adjust float64) {
+	if data == nil {
+		return
+	}
 	type curveData struct {
 		HeatCurve       []float64 `json:"heatCurve"`
 		HeatCurveAdjust float64   `json:"heatCurveAdjust"`
@@ -85,7 +89,7 @@ func (a *App) sendHeavCurve(data []float64, adjust float64) {
 
 func (a *App) Start(ctx context.Context) error {
 	a.ctx = ctx
-	err := a.setupConfig()
+	err := a.setupInitialConfig()
 	if err != nil {
 		return err
 	}
@@ -95,14 +99,11 @@ func (a *App) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if con, ok := a.controller.(*thermiagenesis.Thermiagenesis); ok {
-		curve, err := con.GetHeatCurve()
-		if err != nil {
-			logrus.Errorf("error fetching heatcurve: %s", err.Error())
-		} else {
-			a.sendHeavCurve(curve, 0)
-		}
-		// curl -X POST localhost:8080/api/controller/heatcurve-v1 --data '{"heatCurve":[15,20,15,4,5,6,10], "heatCurveAdjust":0}'
+	curve, err := a.controller.GetHeatCurve()
+	if err != nil {
+		logrus.Errorf("error fetching heatcurve: %s", err.Error())
+	} else {
+		a.sendHeatCurve(curve, 0)
 	}
 
 	a.wg.Add(1)
@@ -140,7 +141,7 @@ func (a *App) Start(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) setupConfig() error {
+func (a *App) setupInitialConfig() error {
 
 	err := a.cliConfig.LoadToken()
 	if err != nil {
@@ -159,25 +160,45 @@ func (a *App) setupConfig() error {
 		}
 		return nil
 	}
-	_, err = a.syncCloudConfig("")
+	cloudConfig, err := a.fetchConfig("")
+	if err != nil {
+		return err
+	}
+	a.cloudConfig = cloudConfig
 
 	return err
 }
 
-func (a *App) syncCloudConfig(fromXFetch string) (bool, error) {
+func (a *App) syncCloudConfig(fromXFetch string) error {
 	cloudConfig, err := a.fetchConfig(fromXFetch)
 	if err != nil {
-		return false, err
+		return err
 	}
-	controllerChanged := a.cloudConfig == nil || cloudConfig.HeatControlType != a.cloudConfig.HeatControlType || cloudConfig.Address != a.cloudConfig.Address
+	needsSetupController := v1config.CloudConfigNeedsControllerSetup(a.cloudConfig, cloudConfig)
+	heatCurveDiff := !slices.Equal(a.cloudConfig.HeatCurve, cloudConfig.HeatCurve)
+
 	a.cloudConfig = cloudConfig
 
 	err = a.StartMQTTServer(a.ctx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	return controllerChanged, nil
+	if needsSetupController {
+		err = a.setupController(a.ctx)
+		if err != nil {
+			logrus.Errorf("error setupController: %s", err.Error())
+		}
+	}
+
+	if heatCurveDiff && a.cloudConfig.HeatCurve != nil {
+		err = a.controller.SetHeatCurve(a.cloudConfig.HeatCurve)
+		if err != nil {
+			logrus.Errorf("error SetHeatCurve: %s", err.Error())
+		}
+	}
+
+	return nil
 }
 
 func (a *App) setupController(pCtx context.Context) error {
@@ -300,17 +321,9 @@ func (a *App) doSendMetrics() {
 		logrus.Errorf("error sendMetrics: %s", err.Error())
 		if strings.Contains(err.Error(), "error fetching state:") {
 			// try to get new config in case we changed it and are in a reconnect loop.
-			controllerChanged, err := a.syncCloudConfig("")
+			err = a.syncCloudConfig("")
 			if err != nil {
 				logrus.Errorf("error syncCloudConfig: %s", err.Error())
-			}
-
-			if !controllerChanged {
-				return
-			}
-			err = a.setupController(a.ctx)
-			if err != nil {
-				logrus.Errorf("error setupController: %s", err.Error())
 			}
 		}
 	}
@@ -390,6 +403,7 @@ func (a *App) sendMeterValues() {
 	}
 
 	for _, meter := range a.cloudConfig.Meters {
+		//TODO if mqtt when read from  a.mqtt data cache  and send to cloud
 		if meter.InterfaceType != "mbus" {
 			continue
 		}
@@ -538,18 +552,10 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 				continue
 			}
 
-			controllerChanged, err := a.syncCloudConfig(key)
+			err := a.syncCloudConfig(key)
 			if err != nil {
-				return resp.StatusCode, err
+				logrus.Errorf("error from syncCloudConfig: %s", err.Error())
 			}
-			if !controllerChanged {
-				return resp.StatusCode, nil
-			}
-			err = a.setupController(a.ctx)
-			if err != nil {
-				return resp.StatusCode, err
-			}
-			// TODO reconnect mbus stuff here aswell? or not needed with serial tty?
 		}
 	}
 
