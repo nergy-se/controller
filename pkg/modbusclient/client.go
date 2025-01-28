@@ -14,6 +14,7 @@ import (
 
 type Client interface {
 	ReadInputRegister(address uint16) (int, error)
+	ReadHoldingRegisterRaw(address, quantity uint16) ([]byte, error)
 	ReadHoldingRegister32(address uint16) (int, error)
 	ReadHoldingRegister16(address uint16) (int, error)
 	ReadDiscreteInput(address uint16) ([]byte, error)
@@ -69,6 +70,14 @@ func (c *client) ReadHoldingRegister16(address uint16) (int, error) {
 
 func (c *client) ReadHoldingRegister32(address uint16) (int, error) {
 	return c.readHoldingRegister(address, 2)
+}
+func (c *client) ReadHoldingRegisterRaw(address, quantity uint16) ([]byte, error) {
+	b, err := c.client.ReadHoldingRegisters(address, quantity)
+	if err != nil {
+		c.closeIfNeeded(err)
+		err = fmt.Errorf("error reading address %d: %w", address, err)
+	}
+	return b, err
 }
 
 func (c *client) readHoldingRegister(address, count uint16) (int, error) {

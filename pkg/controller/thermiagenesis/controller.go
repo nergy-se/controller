@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
+	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
@@ -171,6 +172,7 @@ func (ts *Thermiagenesis) Reconcile(current *config.HourConfig) error {
 	if ts.cloudConfig.DistrictHeatingPrice == 0.0 { // control based on levels.
 		ts.heatingAllowed = current.Heating
 		ts.hotwaterAllowed = current.Hotwater
+		logrus.WithFields(logrus.Fields{"heating": current.Heating, "hotwater": current.Hotwater}).Debugf("thermiagenesis: Reconcile")
 		err := ts.allowHeating(current.Heating)
 		if err != nil {
 			return err
@@ -231,6 +233,83 @@ func (ts *Thermiagenesis) boostHotwater(b bool) error {
 	}
 	return nil
 
+}
+
+func (ts *Thermiagenesis) SetHeatCurve(curve []float64) error {
+	if len(curve) != 7 {
+		return fmt.Errorf("expected 7 curves got: %#v", len(curve))
+	}
+	var address uint16 = 6
+	for _, temp := range curve {
+		_, err := ts.client.WriteSingleRegister(address, uint16(temp*100))
+		address++
+		if err != nil {
+			return fmt.Errorf("error writing heatcurve address %d: %w", address, err)
+		}
+	}
+	return nil
+}
+
+func (ts *Thermiagenesis) GetHeatCurve() ([]float64, error) {
+	// 5 Comfort wheel setting
+	// 6 Set point heat curve, Y-coordinate 1 (highest outdoor temperature)
+	// 7 Set point heat curve, Y-coordinate 2
+	// 8 Set point heat curve, Y-coordinate 3
+	// 9 Set point heat curve, Y-coordinate 4
+	// 10 Set point heat curve, Y-coordinate 5
+	// 11 Set point heat curve, Y-coordinate 6
+	// 12 Set point heat curve, Y-coordinate 7 (lowest outdoor temperature)
+
+	data, err := ts.client.ReadHoldingRegisterRaw(6, 7)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeHeatCurve(data), nil
+}
+
+func decodeHeatCurve(data []byte) []float64 {
+	return []float64{
+		float64(modbusclient.Decode(data[0:2])) / 100.0,
+		float64(modbusclient.Decode(data[2:4])) / 100.0,
+		float64(modbusclient.Decode(data[4:6])) / 100.0,
+		float64(modbusclient.Decode(data[6:8])) / 100.0,
+		float64(modbusclient.Decode(data[8:10])) / 100.0,
+		float64(modbusclient.Decode(data[10:12])) / 100.0,
+		float64(modbusclient.Decode(data[12:14])) / 100.0,
+	}
+}
+
+/*
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 5
+raw response: 0x07 0x6c (length: 2)
+2025/01/27 20:36:40 value is:  19
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 6
+raw response: 0x07 0x6c (length: 2)
+2025/01/27 20:36:49 value is:  19
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 7
+raw response: 0x0a 0x28 (length: 2)
+2025/01/27 20:36:51 value is:  26
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 8
+raw response: 0x0c 0x1c (length: 2)
+2025/01/27 20:37:28 value is:  31
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 9
+raw response: 0x0d 0xac (length: 2)
+2025/01/27 20:37:29 value is:  35
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 10
+raw response: 0x0e 0xd8 (length: 2)
+2025/01/27 20:37:33 value is:  38
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 11
+raw response: 0x11 0x94 (length: 2)
+2025/01/27 20:37:35 value is:  45
+root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 12
+raw response: 0x14 0x50 (length: 2)
+2025/01/27 20:37:37 value is:  52
+*/
+
+func (ts *Thermiagenesis) ReconcileFromMeter(data meter.Data) error {
+	// TODO
+	return nil
 }
 
 func boolPointer(v bool) *bool {

@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/goburrow/modbus"
+	mqttv2 "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/nergy-se/controller/pkg/alarm"
 	v1config "github.com/nergy-se/controller/pkg/api/v1/config"
 	"github.com/nergy-se/controller/pkg/api/v1/types"
 	"github.com/nergy-se/controller/pkg/controller"
@@ -21,41 +25,12 @@ import (
 	"github.com/nergy-se/controller/pkg/controller/thermiagenesis"
 	"github.com/nergy-se/controller/pkg/mbus"
 	"github.com/nergy-se/controller/pkg/modbusclient"
+	"github.com/nergy-se/controller/pkg/mqtt"
 	"github.com/sirupsen/logrus"
 )
 
 var httpClient = &http.Client{
 	Timeout: time.Second * 30,
-}
-
-type activeAlarms struct {
-	activeAlarms []string
-	sync.RWMutex
-}
-
-// Add adds string to alarm list and returns true if it was added. returns false if it already exists.
-func (a *activeAlarms) Add(alarm string) bool {
-	a.Lock()
-	defer a.Unlock()
-	for _, activeAlarm := range a.activeAlarms {
-		if activeAlarm == alarm {
-			return false
-		}
-	}
-
-	a.activeAlarms = append(a.activeAlarms, alarm)
-	return true
-}
-
-func (a *activeAlarms) Clear() bool {
-	hasActive := false
-	a.Lock()
-	if len(a.activeAlarms) > 0 {
-		hasActive = true
-		a.activeAlarms = nil
-	}
-	a.Unlock()
-	return hasActive
 }
 
 type postRequest struct {
@@ -72,12 +47,14 @@ type App struct {
 	controller controller.Controller
 	mbusClient *mbus.Mbus
 
-	activeAlarms *activeAlarms
+	activeAlarms *alarm.ActiveAlarms
 
 	sendQueue chan *postRequest
 
 	ctx            context.Context
 	stopController context.CancelFunc
+
+	mqttServer *mqttv2.Server
 }
 
 func New(config *v1config.CliConfig) *App {
@@ -85,22 +62,48 @@ func New(config *v1config.CliConfig) *App {
 		wg:           &sync.WaitGroup{},
 		cliConfig:    config,
 		schedule:     v1config.NewConfig(),
-		activeAlarms: &activeAlarms{},
+		activeAlarms: &alarm.ActiveAlarms{},
 		mbusClient:   mbus.New(),
 		sendQueue:    make(chan *postRequest, 20000),
 	}
 }
 
+func (a *App) sendHeatCurve(data []float64, adjust float64) {
+	if data == nil {
+		return
+	}
+	type curveData struct {
+		HeatCurve       []float64 `json:"heatCurve"`
+		HeatCurveAdjust float64   `json:"heatCurveAdjust"`
+	}
+	body, err := json.Marshal(curveData{HeatCurve: data, HeatCurveAdjust: adjust})
+	if err != nil {
+		logrus.Errorf("error marshal curveData: %s", err)
+		return
+	}
+	err = a.postWithRetry("api/controller/heatcurve-v1", body)
+	if err != nil {
+		logrus.Errorf("error sending heatcurve-v1 to cloud: %s", err.Error())
+	}
+}
+
 func (a *App) Start(ctx context.Context) error {
 	a.ctx = ctx
-	err := a.setupConfig()
+	err := a.setupInitialConfig()
 	if err != nil {
 		return err
 	}
+	a.doUpdateSchedule()
 
 	err = a.setupController(ctx)
 	if err != nil {
 		return err
+	}
+	curve, err := a.controller.GetHeatCurve()
+	if err != nil {
+		logrus.Errorf("error fetching heatcurve: %s", err.Error())
+	} else {
+		a.sendHeatCurve(curve, 0)
 	}
 
 	a.wg.Add(1)
@@ -138,7 +141,7 @@ func (a *App) Start(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) setupConfig() error {
+func (a *App) setupInitialConfig() error {
 
 	err := a.cliConfig.LoadToken()
 	if err != nil {
@@ -157,15 +160,44 @@ func (a *App) setupConfig() error {
 		}
 		return nil
 	}
-	return a.syncCloudConfig(false)
-}
-
-func (a *App) syncCloudConfig(fromXFetch bool) error {
-	cloudConfig, err := a.fetchConfig(fromXFetch)
+	cloudConfig, err := a.fetchConfig("")
 	if err != nil {
 		return err
 	}
 	a.cloudConfig = cloudConfig
+
+	return err
+}
+
+func (a *App) syncCloudConfig(fromXFetch string) error {
+	cloudConfig, err := a.fetchConfig(fromXFetch)
+	if err != nil {
+		return err
+	}
+	needsSetupController := v1config.CloudConfigNeedsControllerSetup(a.cloudConfig, cloudConfig)
+	heatCurveDiff := !slices.Equal(a.cloudConfig.HeatCurve, cloudConfig.HeatCurve)
+
+	a.cloudConfig = cloudConfig
+
+	err = a.StartMQTTServer(a.ctx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
+	if err != nil {
+		return err
+	}
+
+	if needsSetupController {
+		err = a.setupController(a.ctx)
+		if err != nil {
+			logrus.Errorf("error setupController: %s", err.Error())
+		}
+	}
+
+	if heatCurveDiff && a.cloudConfig.HeatCurve != nil {
+		err = a.controller.SetHeatCurve(a.cloudConfig.HeatCurve)
+		if err != nil {
+			logrus.Errorf("error SetHeatCurve: %s", err.Error())
+		}
+	}
+
 	return nil
 }
 
@@ -173,8 +205,9 @@ func (a *App) setupController(pCtx context.Context) error {
 	if a.stopController != nil {
 		a.stopController()
 	}
-	ctx, cancel := context.WithCancel(pCtx)
-	a.stopController = cancel
+	var ctx context.Context
+	ctx, a.stopController = context.WithCancel(pCtx)
+
 	switch a.cloudConfig.HeatControlType {
 	case types.HeatControlTypeThermiaGenesis:
 		handler := modbus.NewTCPClientHandler(a.cloudConfig.Address)
@@ -193,6 +226,9 @@ func (a *App) setupController(pCtx context.Context) error {
 		a.controller = dummy.New(ctx)
 		logrus.Debug("configured controller dummy")
 	}
+
+	// We must reconcile after controller has been setup otherwise allow values in state can mismatch
+	a.doReconcile()
 	return nil
 }
 
@@ -200,12 +236,53 @@ func (a *App) Wait() {
 	a.wg.Wait()
 }
 
+// TODO start mqtt server if any mqtt config. then have separate function to do the Subscriptions based on whith meter (p1ib etc...)
+func (a *App) StartMQTTServer(ctx context.Context) error {
+	var err error
+	hasAnyMQTT := false
+	for _, m := range a.cloudConfig.Meters {
+		if m.InterfaceType == "mqtt" {
+			hasAnyMQTT = true
+			if a.mqttServer == nil {
+				// TODO allow incoming TCP on 1883 on controllerimage iptables rules.
+				a.mqttServer, err = mqtt.Start(ctx, a.wg)
+				if err != nil {
+					return err
+				}
+				if m.Model == "p1ib" {
+					hasAnyMQTT = true
+					err := a.mqttServer.Subscribe("p1ib/sensor_state", 1, func(cl *mqttv2.Client, sub packets.Subscription, pk packets.Packet) {
+						// if pk.TopicName == "p1ib/sensor_state" {
+						//TODO send to backend and save locally for use in controller?
+						data := &mqtt.P1ib{}
+						err := json.Unmarshal(pk.Payload, data)
+						if err != nil {
+							logrus.Errorf("error unmarshal p1ib payload: %s", err)
+							return
+						}
+
+						logrus.Info("mqtt message", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
+						logrus.Infof("meterData: %#v\n", data.AsMeterData(m.PrimaryID))
+						// }
+					})
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	if !hasAnyMQTT && a.mqttServer != nil {
+		a.mqttServer.Close()
+	}
+	return nil
+}
+
 func (a *App) controllerLoop(ctx context.Context) {
 	defer a.wg.Done()
 	delay := nextDelay()
 	timer := time.NewTimer(delay)
-	a.doUpdateSchedule()
-	a.doReconcile()
 	a.doSendMetrics()
 
 	scheduleTicker := time.NewTicker(time.Hour * 6)
@@ -242,6 +319,13 @@ func (a *App) doSendMetrics() {
 	err := a.sendMetrics()
 	if err != nil {
 		logrus.Errorf("error sendMetrics: %s", err.Error())
+		if strings.Contains(err.Error(), "error fetching state:") {
+			// try to get new config in case we changed it and are in a reconnect loop.
+			err = a.syncCloudConfig("")
+			if err != nil {
+				logrus.Errorf("error syncCloudConfig: %s", err.Error())
+			}
+		}
 	}
 }
 func (a *App) doSendAlarms() {
@@ -279,7 +363,7 @@ func (a *App) reconcile() error {
 func (a *App) sendMetrics() error {
 	state, err := a.controller.State()
 	if err != nil {
-		return err
+		return fmt.Errorf("error fetching state: %w", err)
 	}
 	state.Time = time.Now()
 
@@ -303,6 +387,7 @@ func (a *App) sendMeterValues() {
 		}
 
 		for _, data := range datas {
+			//TODO call a.controller.ReconcileFromMeter...
 			body, err := json.Marshal(data)
 			if err != nil {
 				logrus.Errorf("error marshal %s meter %s: %s", data.Model, data.Id, err)
@@ -315,10 +400,10 @@ func (a *App) sendMeterValues() {
 				continue
 			}
 		}
-
 	}
 
 	for _, meter := range a.cloudConfig.Meters {
+		//TODO if mqtt when read from  a.mqtt data cache  and send to cloud
 		if meter.InterfaceType != "mbus" {
 			continue
 		}
@@ -327,6 +412,7 @@ func (a *App) sendMeterValues() {
 			logrus.Errorf("error fetching mbus meter %s: %s", meter.PrimaryID, err)
 			continue
 		}
+		//TODO call a.controller.ReconcileFromMeter...
 		body, err := json.Marshal(data)
 		if err != nil {
 			logrus.Errorf("error marshal mbus meter %s: %s", meter.PrimaryID, err)
@@ -350,7 +436,7 @@ func (a *App) sendAlarms() error {
 	if len(alarms) == 0 {
 		hadActive := a.activeAlarms.Clear()
 		if hadActive {
-			_, err := a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil, false)
+			_, err := a.do("api/controller/alarms-v1", "DELETE", nil, nil, nil, true)
 			return err
 		}
 		return nil
@@ -367,7 +453,7 @@ func (a *App) sendAlarms() error {
 			continue
 		}
 
-		_, err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil, false)
+		_, err = a.do("api/controller/alarm-v1", "POST", nil, bytes.NewBuffer(body), nil, true)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -396,14 +482,14 @@ func (a *App) updateSchedule() error {
 	return err
 }
 
-func (a *App) fetchConfig(fromXFetch bool) (*v1config.CloudConfig, error) {
+func (a *App) fetchConfig(fromXFetch string) (*v1config.CloudConfig, error) {
 	response := &v1config.CloudConfig{}
 	var header http.Header
-	if fromXFetch {
+	if fromXFetch != "" {
 		header = make(http.Header)
-		header.Set("x-fetch", "ControllerConfig")
+		header.Set("x-fetch", fromXFetch)
 	}
-	_, err := a.do("api/controller/config-v1", "GET", response, nil, header, false)
+	_, err := a.do("api/controller/config-v1", "GET", response, nil, header, true)
 	return response, err
 }
 
@@ -466,15 +552,10 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 				continue
 			}
 
-			err = a.syncCloudConfig(true)
+			err := a.syncCloudConfig(key)
 			if err != nil {
-				return resp.StatusCode, err
+				logrus.Errorf("error from syncCloudConfig: %s", err.Error())
 			}
-			err = a.setupController(a.ctx)
-			if err != nil {
-				return resp.StatusCode, err
-			}
-			// TODO reconnect mbus stuff here aswell? or not needed with serial tty?
 		}
 	}
 
