@@ -165,8 +165,12 @@ func (a *App) setupInitialConfig() error {
 		return err
 	}
 	a.cloudConfig = cloudConfig
+	err = a.StartMQTTServer(a.ctx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
+	if err != nil {
+		return err
+	}
 
-	return err
+	return nil
 }
 
 func (a *App) syncCloudConfig(fromXFetch string) error {
