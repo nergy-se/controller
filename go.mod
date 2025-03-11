@@ -3,12 +3,14 @@ module github.com/nergy-se/controller
 go 1.21
 
 require (
+	github.com/fortnoxab/gohtmock v0.0.0-20250130102025-46560d1dbf38
 	github.com/goburrow/modbus v0.1.0
 	github.com/jonaz/gombus v0.0.0-20240104212355-b2bf5440f211
 	github.com/koding/multiconfig v0.0.0-20171124222453-69c27309b2d7
 	github.com/mochi-mqtt/server/v2 v2.6.6
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.1
+	github.com/tbrandon/mbserver v0.0.0-20231208015628-36eb59221ac2
 )
 
 require (

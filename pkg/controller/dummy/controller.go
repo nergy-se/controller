@@ -136,17 +136,19 @@ func (ts *Dummy) Alarms() ([]string, error) {
 func (ts *Dummy) ReconcileFromMeter(data meter.Data) error {
 	return nil
 }
-func (ts *Dummy) GetHeatCurve() ([]float64, error) {
+func (ts *Dummy) GetHeatCurve() ([]float64, float64, error) {
 	// TODO
 	logrus.Info("dummy: GetHeatCurve returning 21, 22, 23, 24, 25, 26, 27")
-	return []float64{21, 22, 23, 24, 25, 26, 27}, nil
+	logrus.Info("dummy: GetHeatCurve returning adjust 3")
+	return []float64{21, 22, 23, 24, 25, 26, 27}, 3, nil
 }
 
-func (ts *Dummy) SetHeatCurve(curve []float64) error {
+func (ts *Dummy) SetHeatCurve(curve []float64, adjust float64) error {
 	var address uint16 = 6
 	for _, temp := range curve {
 		logrus.Infof("dummy: set address %d temp %d", address, uint16(temp*100))
 		address++
 	}
+	logrus.Infof("dummy: set temp adjust %d", uint16(adjust*100))
 	return nil
 }
