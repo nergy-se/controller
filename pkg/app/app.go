@@ -99,11 +99,11 @@ func (a *App) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	curve, err := a.controller.GetHeatCurve()
+	curve, adjust, err := a.controller.GetHeatCurve()
 	if err != nil {
 		logrus.Errorf("error fetching heatcurve: %s", err.Error())
 	} else {
-		a.sendHeatCurve(curve, 0)
+		a.sendHeatCurve(curve, adjust)
 	}
 
 	a.wg.Add(1)
@@ -179,7 +179,7 @@ func (a *App) syncCloudConfig(fromXFetch string) error {
 		return err
 	}
 	needsSetupController := v1config.CloudConfigNeedsControllerSetup(a.cloudConfig, cloudConfig)
-	heatCurveDiff := !slices.Equal(a.cloudConfig.HeatCurve, cloudConfig.HeatCurve)
+	heatCurveDiff := !slices.Equal(a.cloudConfig.HeatCurve, cloudConfig.HeatCurve) || a.cloudConfig.HeatCurveAdjust != cloudConfig.HeatCurveAdjust
 
 	a.cloudConfig = cloudConfig
 
@@ -195,8 +195,8 @@ func (a *App) syncCloudConfig(fromXFetch string) error {
 		}
 	}
 
-	if heatCurveDiff && a.cloudConfig.HeatCurve != nil {
-		err = a.controller.SetHeatCurve(a.cloudConfig.HeatCurve)
+	if heatCurveDiff && a.cloudConfig.HeatCurve != nil && cloudConfig.HeatCurveControlEnabled {
+		err = a.controller.SetHeatCurve(a.cloudConfig.HeatCurve, a.cloudConfig.HeatCurveAdjust)
 		if err != nil {
 			logrus.Errorf("error SetHeatCurve: %s", err.Error())
 		}

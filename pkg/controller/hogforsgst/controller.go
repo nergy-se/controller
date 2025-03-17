@@ -235,11 +235,11 @@ func (ts *Hogforsgst) Alarms() ([]string, error) {
 	// TODO
 	return nil, nil
 }
-func (ts *Hogforsgst) GetHeatCurve() ([]float64, error) {
+func (ts *Hogforsgst) GetHeatCurve() ([]float64, float64, error) {
 	// TODO
-	return nil, nil
+	return nil, 0, nil
 }
-func (ts *Hogforsgst) SetHeatCurve([]float64) error {
+func (ts *Hogforsgst) SetHeatCurve([]float64, float64) error {
 	// TODO
 	return nil
 }

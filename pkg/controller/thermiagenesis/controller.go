@@ -69,6 +69,10 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
+	s.IndoorSetpoint, err = controller.Scale100itof(ts.client.ReadHoldingRegister16(5)) // Room temperature setpoint sensor scale 100
+	if err != nil {
+		return s, err
+	}
 
 	s.WarmWater, err = controller.Scale100itof(ts.client.ReadInputRegister(17)) // 17 tank Tap water weighted temperature scale 100
 	if err != nil {
@@ -235,13 +239,22 @@ func (ts *Thermiagenesis) boostHotwater(b bool) error {
 
 }
 
-func (ts *Thermiagenesis) SetHeatCurve(curve []float64) error {
+func (ts *Thermiagenesis) SetHeatCurve(curve []float64, adjust float64) error {
 	if len(curve) != 7 {
-		return fmt.Errorf("expected 7 curves got: %#v", len(curve))
+		return fmt.Errorf("expected 7 curves got: %d", len(curve))
 	}
-	var address uint16 = 6
-	for _, temp := range curve {
-		_, err := ts.client.WriteSingleRegister(address, uint16(temp*100))
+	var address uint16 = 5
+	// var address uint16 = 6
+	for _, temp := range append([]float64{adjust + 20.0}, curve...) { // thermia adjust is offset +20
+		var t uint16
+		if address > 5 {
+			t = uint16((temp + adjust) * 100)
+
+		} else {
+			t = uint16(temp * 100)
+		}
+		logrus.Debugf("SetHeatCurve write modbus address: %d value: %d", address, t)
+		_, err := ts.client.WriteSingleRegister(address, t)
 		address++
 		if err != nil {
 			return fmt.Errorf("error writing heatcurve address %d: %w", address, err)
@@ -250,7 +263,7 @@ func (ts *Thermiagenesis) SetHeatCurve(curve []float64) error {
 	return nil
 }
 
-func (ts *Thermiagenesis) GetHeatCurve() ([]float64, error) {
+func (ts *Thermiagenesis) GetHeatCurve() ([]float64, float64, error) {
 	// 5 Comfort wheel setting
 	// 6 Set point heat curve, Y-coordinate 1 (highest outdoor temperature)
 	// 7 Set point heat curve, Y-coordinate 2
@@ -260,23 +273,24 @@ func (ts *Thermiagenesis) GetHeatCurve() ([]float64, error) {
 	// 11 Set point heat curve, Y-coordinate 6
 	// 12 Set point heat curve, Y-coordinate 7 (lowest outdoor temperature)
 
-	data, err := ts.client.ReadHoldingRegisterRaw(6, 7)
+	data, err := ts.client.ReadHoldingRegisterRaw(5, 8)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return decodeHeatCurve(data), nil
+	adjust := (float64(modbusclient.Decode(data[0:2])) / 100.0) - 20
+	return decodeHeatCurve(data[2:], adjust), adjust, nil
 }
 
-func decodeHeatCurve(data []byte) []float64 {
+func decodeHeatCurve(data []byte, adjust float64) []float64 {
 	return []float64{
-		float64(modbusclient.Decode(data[0:2])) / 100.0,
-		float64(modbusclient.Decode(data[2:4])) / 100.0,
-		float64(modbusclient.Decode(data[4:6])) / 100.0,
-		float64(modbusclient.Decode(data[6:8])) / 100.0,
-		float64(modbusclient.Decode(data[8:10])) / 100.0,
-		float64(modbusclient.Decode(data[10:12])) / 100.0,
-		float64(modbusclient.Decode(data[12:14])) / 100.0,
+		float64(modbusclient.Decode(data[0:2]))/100.0 - adjust,
+		float64(modbusclient.Decode(data[2:4]))/100.0 - adjust,
+		float64(modbusclient.Decode(data[4:6]))/100.0 - adjust,
+		float64(modbusclient.Decode(data[6:8]))/100.0 - adjust,
+		float64(modbusclient.Decode(data[8:10]))/100.0 - adjust,
+		float64(modbusclient.Decode(data[10:12]))/100.0 - adjust,
+		float64(modbusclient.Decode(data[12:14]))/100.0 - adjust,
 	}
 }
 
