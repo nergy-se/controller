@@ -1,8 +1,6 @@
 package mqtt
 
 import (
-	"time"
-
 	"github.com/nergy-se/controller/pkg/api/v1/meter"
 )
 
@@ -46,15 +44,14 @@ type P1ib struct {
 	P1IbWifiMac                  string  `json:"p1ib_wifi_mac"`
 }
 
-func (p P1ib) AsMeterData(id string) meter.Data {
-	return meter.Data{
+func (p P1ib) AsMeterData(id string) *meter.Data {
+	return &meter.Data{
 		Id:          id,
 		Model:       "p1ib",
-		Time:        time.Time{},
 		Current_W:   p.P1IbImportExport * 1000.0,
 		Current_VLL: 0.0,
 		Current_VLN: 0.0,
-		Total_WH:    0.0,
+		Total_WH:    p.P1IbHourlyActiveImportQ1Q4,
 		L1_A:        p.P1IbCurrentL1,
 		L2_A:        p.P1IbCurrentL2,
 		L3_A:        p.P1IbCurrentL3,

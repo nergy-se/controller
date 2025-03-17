@@ -18,6 +18,7 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/nergy-se/controller/pkg/alarm"
 	v1config "github.com/nergy-se/controller/pkg/api/v1/config"
+	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/api/v1/types"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/controller/dummy"
@@ -55,6 +56,7 @@ type App struct {
 	stopController context.CancelFunc
 
 	mqttServer *mqttv2.Server
+	meterCache *meter.Cache
 }
 
 func New(config *v1config.CliConfig) *App {
@@ -65,6 +67,7 @@ func New(config *v1config.CliConfig) *App {
 		activeAlarms: &alarm.ActiveAlarms{},
 		mbusClient:   mbus.New(),
 		sendQueue:    make(chan *postRequest, 20000),
+		meterCache:   &meter.Cache{},
 	}
 }
 
@@ -254,10 +257,7 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 					return err
 				}
 				if m.Model == "p1ib" {
-					hasAnyMQTT = true
 					err := a.mqttServer.Subscribe("p1ib/sensor_state", 1, func(cl *mqttv2.Client, sub packets.Subscription, pk packets.Packet) {
-						// if pk.TopicName == "p1ib/sensor_state" {
-						//TODO send to backend and save locally for use in controller?
 						data := &mqtt.P1ib{}
 						err := json.Unmarshal(pk.Payload, data)
 						if err != nil {
@@ -265,9 +265,9 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 							return
 						}
 
-						logrus.Info("mqtt message", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
-						logrus.Infof("meterData: %#v\n", data.AsMeterData(m.PrimaryID))
-						// }
+						meterData := data.AsMeterData(m.PrimaryID)
+						meterData.Time = time.Now()
+						a.meterCache.Set(meterData)
 					})
 					if err != nil {
 						return err
@@ -406,26 +406,38 @@ func (a *App) sendMeterValues() {
 		}
 	}
 
-	for _, meter := range a.cloudConfig.Meters {
-		//TODO if mqtt when read from  a.mqtt data cache  and send to cloud
-		if meter.InterfaceType != "mbus" {
+	for _, m := range a.cloudConfig.Meters {
+		var data *meter.Data
+		var err error
+		switch m.InterfaceType {
+		case "mbus":
+			data, err = a.mbusClient.ReadValues(m.Model, m.PrimaryID)
+			if err != nil {
+				logrus.Errorf("error fetching mbus meter %s: %s", m.PrimaryID, err)
+				continue
+			}
+		case "mqtt":
+			if m.Model == "p1ib" {
+				data = a.meterCache.Get()
+			}
+		default:
 			continue
 		}
-		data, err := a.mbusClient.ReadValues(meter.Model, meter.PrimaryID)
-		if err != nil {
-			logrus.Errorf("error fetching mbus meter %s: %s", meter.PrimaryID, err)
+
+		if data == nil {
+			logrus.Errorf("empty data for meter %s: %s id: %s", m.InterfaceType, m.Model, m.PrimaryID)
 			continue
 		}
-		//TODO call a.controller.ReconcileFromMeter...
+
 		body, err := json.Marshal(data)
 		if err != nil {
-			logrus.Errorf("error marshal mbus meter %s: %s", meter.PrimaryID, err)
+			logrus.Errorf("error marshal mbus meter %s: %s", m.PrimaryID, err)
 			continue
 		}
 
 		err = a.postWithRetry("api/controller/meter-v1", body)
 		if err != nil {
-			logrus.Errorf("error POST mbus meter %s: %s", meter.PrimaryID, err)
+			logrus.Errorf("error POST mbus meter %s: %s", m.PrimaryID, err)
 			continue
 		}
 	}

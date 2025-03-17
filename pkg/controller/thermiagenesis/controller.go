@@ -253,7 +253,7 @@ func (ts *Thermiagenesis) SetHeatCurve(curve []float64, adjust float64) error {
 		} else {
 			t = uint16(temp * 100)
 		}
-		logrus.Debugf("SetHeatCurve write modbus address: %d value: %d", address, t)
+		logrus.Infof("SetHeatCurve write modbus address: %d value: %d", address, t)
 		_, err := ts.client.WriteSingleRegister(address, t)
 		address++
 		if err != nil {

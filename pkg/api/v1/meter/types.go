@@ -1,6 +1,8 @@
 package meter
 
-import "time"
+import (
+	"time"
+)
 
 type Data struct {
 	Id          string    `json:"id"`
