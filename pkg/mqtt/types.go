@@ -51,7 +51,7 @@ func (p P1ib) AsMeterData(id string) *meter.Data {
 		Current_W:   p.P1IbImportExport * 1000.0,
 		Current_VLL: 0.0,
 		Current_VLN: 0.0,
-		Total_WH:    p.P1IbHourlyActiveImportQ1Q4,
+		Total_WH:    p.P1IbHourlyActiveImportQ1Q4 * 1000.0,
 		L1_A:        p.P1IbCurrentL1,
 		L2_A:        p.P1IbCurrentL2,
 		L3_A:        p.P1IbCurrentL3,
