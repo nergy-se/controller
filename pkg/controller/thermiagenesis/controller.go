@@ -161,6 +161,13 @@ func (ts *Thermiagenesis) allowHeatpump(price float64) bool {
 	// calculated from 3.45 at 60C and 5.9 at 35C
 	ts.calculatedCOP = 3.45 + 0.098*(60.0-ts.heatCarrierForward)
 
+	if ts.calculatedCOP > 5.9 {
+		ts.calculatedCOP = 5.9
+	}
+	if ts.calculatedCOP < 3.45 {
+		ts.calculatedCOP = 3.45
+	}
+
 	allow := price/ts.calculatedCOP < ts.cloudConfig.DistrictHeatingPrice
 	logrus.WithFields(logrus.Fields{
 		"cop":           ts.calculatedCOP,

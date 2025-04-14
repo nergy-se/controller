@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/nergy-se/controller/pkg/mbus"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/mqtt"
+	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
 
@@ -57,6 +59,7 @@ type App struct {
 
 	mqttServer *mqttv2.Server
 	meterCache *meter.Cache
+	stateCache *state.Cache
 }
 
 func New(config *v1config.CliConfig) *App {
@@ -68,6 +71,7 @@ func New(config *v1config.CliConfig) *App {
 		mbusClient:   mbus.New(),
 		sendQueue:    make(chan *postRequest, 20000),
 		meterCache:   &meter.Cache{},
+		stateCache:   &state.Cache{},
 	}
 }
 
@@ -361,6 +365,11 @@ func (a *App) reconcile() error {
 		return fmt.Errorf("no current schedule")
 	}
 
+	// indoor temp rules here
+	if t := a.stateCache.Get().Indoor; t != nil && *t < a.cloudConfig.AllowedMinIndoorTemp { // dont allow cooler than the setting indoor
+		current.Heating = true
+	}
+
 	return a.controller.Reconcile(current)
 }
 
@@ -370,6 +379,12 @@ func (a *App) sendMetrics() error {
 		return fmt.Errorf("error fetching state: %w", err)
 	}
 	state.Time = time.Now()
+
+	cachedState := a.stateCache.Get()
+	if cachedState.Indoor != nil && cachedState.Outdoor == nil { //TODO make this more generic with more fields etc.
+		state.Indoor = cachedState.Indoor
+	}
+	a.stateCache.Set(state)
 
 	body, err := json.Marshal(state)
 	if err != nil {
@@ -419,6 +434,22 @@ func (a *App) sendMeterValues() {
 		case "mqtt":
 			if m.Model == "p1ib" {
 				data = a.meterCache.Get()
+			}
+		case "modbus-tcp":
+			if m.Model == "holdingreg-10scale-16bit" { // TODO add m.Position = indoor_temp
+
+				handler := modbus.NewTCPClientHandler(m.Address)
+				c := modbusclient.New(modbus.NewClient(handler), handler.Close)
+				id, _ := strconv.Atoi(m.PrimaryID)
+				var val int
+				val, err = c.ReadHoldingRegister16(uint16(id))
+				handler.Close()
+				if err != nil {
+					logrus.Errorf("error ReadHoldingRegister16 from address:%s id:%s", m.Address, m.PrimaryID)
+				}
+				t := float64(val) / 10.0
+				a.stateCache.Set(&state.State{Indoor: &t})
+				continue // continue for loos since we have nothing to POST to meter-v1 here (send with controller metrics)
 			}
 		default:
 			continue

@@ -1,6 +1,9 @@
 package state
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 const (
 	ValveStateHeating   ValveState = false
@@ -36,4 +39,23 @@ type State struct {
 
 	HeatingAllowed  *bool `json:"heatingAllowed,omitempty"`
 	HotwaterAllowed *bool `json:"hotwaterAllowed,omitempty"`
+}
+
+type Cache struct {
+	data *State
+	sync.RWMutex
+}
+
+func (c *Cache) Get() *State {
+	c.RLock()
+	defer c.RUnlock()
+	if c.data == nil {
+		return &State{}
+	}
+	return c.data
+}
+func (c *Cache) Set(d *State) {
+	c.Lock()
+	c.data = d
+	c.Unlock()
 }

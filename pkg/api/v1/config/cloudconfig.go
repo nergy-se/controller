@@ -16,6 +16,9 @@ type CloudConfig struct {
 	HotWaterNormalStartTemperature int64 `json:"hotWaterNormalStartTemperature"`
 	HotWaterNormalStopTemperature  int64 `json:"hotWaterNormalStopTemperature"`
 
+	AllowedMinIndoorTemp float64 `json:"allowedMinIndoorTemp"`
+	AllowedMaxIndoorTemp float64 `json:"allowedMaxIndoorTemp"`
+
 	Meters []Meter `json:"meters,omitempty"`
 
 	HeatCurveAdjust         float64   `json:"heatCurveAdjust"`
@@ -27,6 +30,7 @@ type Meter struct {
 	InterfaceType string `json:"interfaceType"`
 	Model         string `json:"model"`
 	PrimaryID     string `json:"primaryId"`
+	Address       string `json:"address"`
 }
 
 func CloudConfigNeedsControllerSetup(old *CloudConfig, new *CloudConfig) bool {
