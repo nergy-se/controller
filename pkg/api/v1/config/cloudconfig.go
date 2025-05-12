@@ -19,6 +19,8 @@ type CloudConfig struct {
 	AllowedMinIndoorTemp float64 `json:"allowedMinIndoorTemp"`
 	AllowedMaxIndoorTemp float64 `json:"allowedMaxIndoorTemp"`
 
+	AllowedMinHotWaterTemp float64 `json:"allowedMinHotWaterTemp"`
+
 	Meters []Meter `json:"meters,omitempty"`
 
 	HeatCurveAdjust              float64   `json:"heatCurveAdjust"`

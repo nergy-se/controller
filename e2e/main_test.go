@@ -193,7 +193,6 @@ func TestThermiaSendCurrentConfig(t *testing.T) {
 		})
 	}
 }
-
 func TestThermiaChangeConfigFromCloud(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	var tests = []struct {
@@ -367,4 +366,101 @@ func WaitFor(t *testing.T, timeout time.Duration, msg string, ok func() bool) {
 			return
 		}
 	}
+}
+
+func TestThermiaAllowedMinValues(t *testing.T) {
+	logrus.SetLevel(logrus.DebugLevel)
+	mock := gohtmock.New()
+	config := &config.CliConfig{
+		Server:     mock.URL(),
+		SerialFile: "/dev/null",
+		APIToken:   "mysecrettoken",
+	}
+	app := app.New(config)
+
+	done := make(chan bool)
+	mock.Mock("/api/controller/config-v1", `
+{
+  "controllerId": "88e7f9b7-7a6d-41e1-9861-081799844311",
+  "heatControlType": "thermiagenesis",
+  "address": "127.0.0.1:1502",
+  "consideredCheap": 0,
+  "electricBasePrice": 0,
+  "hotWaterHours": 2,
+  "maxLevelHeating": 10,
+  "maxLevelHotwater": 10,
+  "hotWaterBoostStartTemperature": 52,
+  "hotWaterBoostStopTemperature": 58,
+  "hotWaterNormalStartTemperature": 45,
+  "hotWaterNormalStopTemperature": 57,
+  "levelFormula": "",
+  "currency": "",
+  "districtHeatingPrice": 0,
+  "COP": 0,
+  "heatCurveControlEnabled": true,
+  "heatCurveAdjust": 0,
+  "heatCurve": [
+    19,
+    26,
+    31,
+    35,
+    38,
+    45,
+    52
+  ],
+  "heatingSeasonStopTemperature": 13,
+  "allowedMinIndoorTemp":16,
+  "allowedMinHotWaterTemp":40
+}`)
+
+	mock.Mock("/api/controller/schedule-v1", fmt.Sprintf(`
+{
+  "%[1]s": {
+    "time": "%[1]s",
+    "price": 0.417,
+    "hotwater": false,
+    "hotwaterForce": false,
+    "heating": false
+  }
+}`, time.Now().Format(time.RFC3339)))
+	mock.Mock("/api/controller/config-v1", "", func(r *http.Request) int {
+		return 200
+	}).SetMethod("POST")
+	mock.Mock("/api/controller/metrics-v1", "",
+		func(r *http.Request) int { // first call
+			b, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+			assert.Contains(t, string(b), `"heatingAllowed":false,"hotwaterAllowed":false`)
+			defer close(done)
+			return 200
+		}, func(r *http.Request) int { // second call
+			b, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+			assert.Contains(t, string(b), `"heatingAllowed":true,"hotwaterAllowed":true`)
+			defer close(done)
+			return 200
+		}).SetMethod("POST")
+
+	serv := mbserver.NewServer()
+
+	serv.InputRegisters[131] = toUint(15.0 * 100) // Indoor temp
+	serv.InputRegisters[17] = toUint(39.0 * 100)  // hotwater temp
+	err := serv.ListenTCP("127.0.0.1:1502")
+	assert.NoError(t, err)
+	defer serv.Close()
+
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+	err = app.Start(ctx)
+	assert.NoError(t, err)
+
+	<-done
+
+	app.DoReconcile() // after second reconcile we should be guarded by allowedMinIndoorTemp and allowedMinHotWaterTemp
+
+	assert.Equal(t, uint16(4500), serv.HoldingRegisters[22])
+	assert.Equal(t, uint16(5700), serv.HoldingRegisters[23])
+	mock.AssertCallCount(t, "POST", "/api/controller/config-v1", 1)
+	mock.AssertCallCount(t, "POST", "/api/controller/metrics-v1", 1)
+	mock.AssertMocksCalled(t)
 }

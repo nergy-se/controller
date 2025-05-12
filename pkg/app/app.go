@@ -57,21 +57,26 @@ type App struct {
 	ctx            context.Context
 	stopController context.CancelFunc
 
-	mqttServer *mqttv2.Server
-	meterCache *meter.Cache
-	stateCache *state.Cache
+	mqttServer      *mqttv2.Server
+	meterCache      *meter.Cache
+	stateCache      *state.Cache
+	meterStateCache *state.Cache
+
+	metricsTicker time.Duration
 }
 
 func New(config *v1config.CliConfig) *App {
 	return &App{
-		wg:           &sync.WaitGroup{},
-		cliConfig:    config,
-		schedule:     v1config.NewConfig(),
-		activeAlarms: &alarm.ActiveAlarms{},
-		mbusClient:   mbus.New(),
-		sendQueue:    make(chan *postRequest, 20000),
-		meterCache:   &meter.Cache{},
-		stateCache:   &state.Cache{},
+		wg:              &sync.WaitGroup{},
+		cliConfig:       config,
+		schedule:        v1config.NewConfig(),
+		activeAlarms:    &alarm.ActiveAlarms{},
+		mbusClient:      mbus.New(),
+		sendQueue:       make(chan *postRequest, 20000),
+		meterCache:      &meter.Cache{},
+		stateCache:      &state.Cache{},
+		meterStateCache: &state.Cache{},
+		metricsTicker:   time.Second * 30,
 	}
 }
 
@@ -256,7 +261,7 @@ func (a *App) setupController(pCtx context.Context) error {
 	}
 
 	// We must reconcile after controller has been setup otherwise allow values in state can mismatch
-	a.doReconcile()
+	a.DoReconcile()
 	return nil
 }
 
@@ -321,7 +326,7 @@ func (a *App) controllerLoop(ctx context.Context) {
 			a.doSendAlarms()
 		case <-timer.C:
 			timer.Reset(nextDelay())
-			a.doReconcile()
+			a.DoReconcile()
 		case <-scheduleTicker.C:
 			a.doUpdateSchedule()
 		case <-refreshToken.C:
@@ -360,7 +365,7 @@ func (a *App) doSendAlarms() {
 	}
 }
 
-func (a *App) doReconcile() {
+func (a *App) DoReconcile() {
 	err := a.reconcile()
 	if err != nil {
 		logrus.Errorf("error reconcile: %s", err.Error())
@@ -384,7 +389,12 @@ func (a *App) reconcile() error {
 
 	// indoor temp rules here
 	if t := a.stateCache.Get().Indoor; t != nil && *t < a.cloudConfig.AllowedMinIndoorTemp { // dont allow cooler than the setting indoor
+		logrus.Debug("heating true due to AllowedMinIndoorTemp")
 		current.Heating = true
+	}
+	if t := a.stateCache.Get().WarmWater; t != nil && *t < a.cloudConfig.AllowedMinHotWaterTemp { // dont allow cooler than AllowedMinHotWaterTemp
+		logrus.Debug("hotwater true due to AllowedMinHotWaterTemp")
+		current.Hotwater = true
 	}
 
 	return a.controller.Reconcile(current)
@@ -397,8 +407,8 @@ func (a *App) sendMetrics() error {
 	}
 	state.Time = time.Now()
 
-	cachedState := a.stateCache.Get()
-	if cachedState.Indoor != nil && cachedState.Outdoor == nil { //TODO make this more generic with more fields etc.
+	cachedState := a.meterStateCache.Get() // always override with values from meterStateCache
+	if cachedState.Indoor != nil {         //TODO make this more generic with more fields etc.
 		state.Indoor = cachedState.Indoor
 	}
 	a.stateCache.Set(state)
@@ -464,7 +474,7 @@ func (a *App) sendMeterValues() {
 					logrus.Errorf("error ReadHoldingRegister16 from address:%s id:%s", m.Address, m.PrimaryID)
 				}
 				t := float64(val) / 10.0
-				a.stateCache.Set(&state.State{Indoor: &t})
+				a.meterStateCache.Set(&state.State{Indoor: &t})
 				continue // continue for loos since we have nothing to POST to meter-v1 here (send with controller metrics)
 			}
 		default:
