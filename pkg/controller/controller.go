@@ -2,16 +2,17 @@ package controller
 
 import (
 	"github.com/nergy-se/controller/pkg/api/v1/config"
-	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/state"
 )
 
 type Controller interface {
 	Reconcile(current *config.HourConfig) error
 
-	ReconcileFromMeter(data meter.Data) error
 	GetHeatCurve() ([]float64, float64, error)
 	SetHeatCurve([]float64, float64) error
+
+	GetHeatingSeasonStopTemperature() (float64, error)
+	SetHeatingSeasonStopTemperature(float64) error
 
 	// fetch state. Used for metrics to cloud
 	State() (*state.State, error)

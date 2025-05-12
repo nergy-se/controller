@@ -243,10 +243,15 @@ func (ts *Hogforsgst) SetHeatCurve([]float64, float64) error {
 	// TODO
 	return nil
 }
-func (ts *Hogforsgst) ReconcileFromMeter(data meter.Data) error {
+func (ts *Hogforsgst) GetHeatingSeasonStopTemperature() (float64, error) {
+	//TODO
+	return 0, nil
+}
+func (ts *Hogforsgst) SetHeatingSeasonStopTemperature(temp float64) error {
 	// TODO
 	return nil
 }
+
 func boolPointer(v bool) *bool {
 	return &v
 }

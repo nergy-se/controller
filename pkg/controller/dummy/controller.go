@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
-	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/state"
 	"github.com/sirupsen/logrus"
 )
@@ -133,9 +132,6 @@ func (ts *Dummy) Alarms() ([]string, error) {
 	defer ts.Unlock()
 	return ts.alarms, nil
 }
-func (ts *Dummy) ReconcileFromMeter(data meter.Data) error {
-	return nil
-}
 func (ts *Dummy) GetHeatCurve() ([]float64, float64, error) {
 	// TODO
 	logrus.Info("dummy: GetHeatCurve returning 21, 22, 23, 24, 25, 26, 27")
@@ -150,5 +146,14 @@ func (ts *Dummy) SetHeatCurve(curve []float64, adjust float64) error {
 		address++
 	}
 	logrus.Infof("dummy: set temp adjust %d", uint16(adjust*100))
+	return nil
+}
+
+func (ts *Dummy) GetHeatingSeasonStopTemperature() (float64, error) {
+	logrus.Infof("dummy: get HeatingSeasonStopTemperature 17.0")
+	return 17.0, nil
+}
+func (ts *Dummy) SetHeatingSeasonStopTemperature(temp float64) error {
+	logrus.Infof("dummy: set HeatingSeasonStopTemperature: %f", temp)
 	return nil
 }

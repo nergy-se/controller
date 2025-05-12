@@ -21,9 +21,10 @@ type CloudConfig struct {
 
 	Meters []Meter `json:"meters,omitempty"`
 
-	HeatCurveAdjust         float64   `json:"heatCurveAdjust"`
-	HeatCurveControlEnabled bool      `json:"heatCurveControlEnabled"`
-	HeatCurve               []float64 `json:"heatCurve"`
+	HeatCurveAdjust              float64   `json:"heatCurveAdjust"`
+	HeatCurveControlEnabled      bool      `json:"heatCurveControlEnabled"`
+	HeatCurve                    []float64 `json:"heatCurve"`
+	HeatingSeasonStopTemperature float64   `json:"heatingSeasonStopTemperature"`
 }
 
 type Meter struct {

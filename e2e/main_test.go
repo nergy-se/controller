@@ -60,7 +60,7 @@ import (
 }
 */
 
-func TestThermiaSendHeatCurve(t *testing.T) {
+func TestThermiaSendCurrentConfig(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	var tests = []struct {
 		name                 string
@@ -131,7 +131,8 @@ func TestThermiaSendHeatCurve(t *testing.T) {
     38,
     45,
     52
-  ]
+  ],
+  "heatingSeasonStopTemperature": 13
 }`)
 
 			mock.Mock("/api/controller/schedule-v1", fmt.Sprintf(`
@@ -144,13 +145,15 @@ func TestThermiaSendHeatCurve(t *testing.T) {
     "heating": true
   }
 }`, time.Now().Format(time.RFC3339)))
-			mock.Mock("/api/controller/heatcurve-v1", "", func(r *http.Request) int {
+			mock.Mock("/api/controller/config-v1", "", func(r *http.Request) int {
 				b, err := io.ReadAll(r.Body)
 				assert.NoError(t, err)
 				fmt.Println("body was", string(b))
 				j, err := json.Marshal(tt.expectedCurveConfig)
 				assert.NoError(t, err)
-				assert.Contains(t, string(b), fmt.Sprintf(`{"heatCurve":%s,"heatCurveAdjust":%s}`, string(j), strconv.FormatFloat(tt.expectedAdjustConfig, 'g', -1, 64)))
+				assert.Contains(t, string(b), fmt.Sprintf(`"heatCurve":%s`, string(j)))
+				assert.Contains(t, string(b), fmt.Sprintf(`"heatCurveAdjust":%s`, strconv.FormatFloat(tt.expectedAdjustConfig, 'g', -1, 64)))
+				assert.Contains(t, string(b), `"heatingSeasonStopTemperature":13`)
 				return 200
 			}).SetMethod("POST")
 			mock.Mock("/api/controller/metrics-v1", "", func(r *http.Request) int {
@@ -168,6 +171,7 @@ func TestThermiaSendHeatCurve(t *testing.T) {
 			for i, temp := range tt.currentPumpCurve {
 				serv.HoldingRegisters[i+6] = uint16(temp * 100) // heatcurve
 			}
+			serv.HoldingRegisters[16] = uint16(13 * 100) // heatingSeasonStopTemperature 13.0
 
 			serv.InputRegisters[13] = toUint(-15.5 * 100) // outdoor temp
 			err := serv.ListenTCP("127.0.0.1:1502")
@@ -183,14 +187,14 @@ func TestThermiaSendHeatCurve(t *testing.T) {
 
 			assert.Equal(t, uint16(4500), serv.HoldingRegisters[22])
 			assert.Equal(t, uint16(5700), serv.HoldingRegisters[23])
-			mock.AssertCallCount(t, "POST", "/api/controller/heatcurve-v1", 1)
+			mock.AssertCallCount(t, "POST", "/api/controller/config-v1", 1)
 			mock.AssertCallCount(t, "POST", "/api/controller/metrics-v1", 1)
 			mock.AssertMocksCalled(t)
 		})
 	}
 }
 
-func TestThermiaChangeHeatCurve(t *testing.T) {
+func TestThermiaChangeConfigFromCloud(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	var tests = []struct {
 		name                    string
@@ -256,10 +260,10 @@ func TestThermiaChangeHeatCurve(t *testing.T) {
   "COP": 0,
   "heatCurveControlEnabled": true,
   "heatCurveAdjust": %s,
-  "heatCurve": %s
+  "heatCurve": %s,
+  "heatingSeasonStopTemperature": 13
 }`, strconv.FormatFloat(tt.adjust, 'g', -1, 64), string(j))).Filter(func(r *http.Request) bool {
 				if r.Header.Get("x-fetch") == "ControllerConfig" {
-
 					defer close(done)
 					return true
 				}
@@ -294,7 +298,8 @@ func TestThermiaChangeHeatCurve(t *testing.T) {
     5,
     6,
     7
-  ]
+  ],
+  "heatingSeasonStopTemperature": 0
 }`)
 
 			mock.Mock("/api/controller/schedule-v1", fmt.Sprintf(`
@@ -307,7 +312,7 @@ func TestThermiaChangeHeatCurve(t *testing.T) {
     "heating": true
   }
 }`, time.Now().Format(time.RFC3339)))
-			mock.Mock("/api/controller/heatcurve-v1", "", func(r *http.Request) int {
+			mock.Mock("/api/controller/config-v1", "", func(r *http.Request) int {
 				return 200
 			}).SetMethod("POST")
 			mock.Mock("/api/controller/metrics-v1", "", func(r *http.Request) int {
@@ -333,6 +338,7 @@ func TestThermiaChangeHeatCurve(t *testing.T) {
 			for i, temp := range tt.expectedSetCurveOnPump {
 				assert.Equal(t, int(temp*100), int(serv.HoldingRegisters[i+6]))
 			}
+			assert.Equal(t, int(13*100), int(serv.HoldingRegisters[16]))
 
 			mock.AssertMocksCalled(t)
 		})

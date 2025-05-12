@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/nergy-se/controller/pkg/api/v1/config"
-	"github.com/nergy-se/controller/pkg/api/v1/meter"
 	"github.com/nergy-se/controller/pkg/controller"
 	"github.com/nergy-se/controller/pkg/modbusclient"
 	"github.com/nergy-se/controller/pkg/state"
@@ -289,6 +288,19 @@ func (ts *Thermiagenesis) GetHeatCurve() ([]float64, float64, error) {
 	return decodeHeatCurve(data[2:], adjust), adjust, nil
 }
 
+func (ts *Thermiagenesis) GetHeatingSeasonStopTemperature() (float64, error) {
+	temp, err := ts.client.ReadHoldingRegister16(16) // heatingSeasonStopTemperature
+	if err != nil {
+		return 0, err
+	}
+	return float64(temp) / 100.0, nil
+}
+func (ts *Thermiagenesis) SetHeatingSeasonStopTemperature(t float64) error {
+	logrus.Info("SetHeatingSeasonStopTemperature", t)
+	_, err := ts.client.WriteSingleRegister(16, uint16(t*100))
+	return err
+}
+
 func decodeHeatCurve(data []byte, adjust float64) []float64 {
 	return []float64{
 		float64(modbusclient.Decode(data[0:2]))/100.0 - adjust,
@@ -327,11 +339,6 @@ root@raspberrypi4-64:/home# ./modc -addr 172.16.61.47:502 -holdingreg 12
 raw response: 0x14 0x50 (length: 2)
 2025/01/27 20:37:37 value is:  52
 */
-
-func (ts *Thermiagenesis) ReconcileFromMeter(data meter.Data) error {
-	// TODO
-	return nil
-}
 
 func boolPointer(v bool) *bool {
 	return &v

@@ -75,20 +75,32 @@ func New(config *v1config.CliConfig) *App {
 	}
 }
 
-func (a *App) sendHeatCurve(data []float64, adjust float64) {
-	if data == nil {
-		return
+func (a *App) sendCurrentSettings() {
+	curve, adjust, err := a.controller.GetHeatCurve()
+	if err != nil {
+		logrus.Errorf("error fetching heatcurve: %s", err.Error())
 	}
+
+	heatingSeasonStopTemperature, err := a.controller.GetHeatingSeasonStopTemperature()
+	if err != nil {
+		logrus.Errorf("error fetching  heatingSeasonStopTemperature: %s", err.Error())
+	}
+
 	type curveData struct {
-		HeatCurve       []float64 `json:"heatCurve"`
-		HeatCurveAdjust float64   `json:"heatCurveAdjust"`
+		HeatCurve                    []float64 `json:"heatCurve,omitempty"`
+		HeatCurveAdjust              float64   `json:"heatCurveAdjust"`
+		HeatingSeasonStopTemperature float64   `json:"heatingSeasonStopTemperature,omitempty"`
 	}
-	body, err := json.Marshal(curveData{HeatCurve: data, HeatCurveAdjust: adjust})
+	body, err := json.Marshal(curveData{
+		HeatCurve:                    curve,
+		HeatCurveAdjust:              adjust,
+		HeatingSeasonStopTemperature: heatingSeasonStopTemperature,
+	})
 	if err != nil {
 		logrus.Errorf("error marshal curveData: %s", err)
 		return
 	}
-	err = a.postWithRetry("api/controller/heatcurve-v1", body)
+	err = a.postWithRetry("api/controller/config-v1", body)
 	if err != nil {
 		logrus.Errorf("error sending heatcurve-v1 to cloud: %s", err.Error())
 	}
@@ -106,12 +118,8 @@ func (a *App) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	curve, adjust, err := a.controller.GetHeatCurve()
-	if err != nil {
-		logrus.Errorf("error fetching heatcurve: %s", err.Error())
-	} else {
-		a.sendHeatCurve(curve, adjust)
-	}
+
+	a.sendCurrentSettings()
 
 	a.wg.Add(1)
 	go a.controllerLoop(ctx)
@@ -187,6 +195,7 @@ func (a *App) syncCloudConfig(fromXFetch string) error {
 	}
 	needsSetupController := v1config.CloudConfigNeedsControllerSetup(a.cloudConfig, cloudConfig)
 	heatCurveDiff := !slices.Equal(a.cloudConfig.HeatCurve, cloudConfig.HeatCurve) || a.cloudConfig.HeatCurveAdjust != cloudConfig.HeatCurveAdjust
+	heatingSeasonStopTemperatureDiff := a.cloudConfig.HeatingSeasonStopTemperature != cloudConfig.HeatingSeasonStopTemperature
 
 	a.cloudConfig = cloudConfig
 
@@ -202,10 +211,18 @@ func (a *App) syncCloudConfig(fromXFetch string) error {
 		}
 	}
 
-	if heatCurveDiff && a.cloudConfig.HeatCurve != nil && cloudConfig.HeatCurveControlEnabled {
-		err = a.controller.SetHeatCurve(a.cloudConfig.HeatCurve, a.cloudConfig.HeatCurveAdjust)
-		if err != nil {
-			logrus.Errorf("error SetHeatCurve: %s", err.Error())
+	if cloudConfig.HeatCurveControlEnabled {
+		if heatCurveDiff && a.cloudConfig.HeatCurve != nil {
+			err = a.controller.SetHeatCurve(a.cloudConfig.HeatCurve, a.cloudConfig.HeatCurveAdjust)
+			if err != nil {
+				logrus.Errorf("error SetHeatCurve: %s", err.Error())
+			}
+		}
+		if heatingSeasonStopTemperatureDiff {
+			err = a.controller.SetHeatingSeasonStopTemperature(a.cloudConfig.HeatingSeasonStopTemperature)
+			if err != nil {
+				logrus.Errorf("error SetHeatingSeasonStopTemperature: %s", err.Error())
+			}
 		}
 	}
 
@@ -406,7 +423,6 @@ func (a *App) sendMeterValues() {
 		}
 
 		for _, data := range datas {
-			//TODO call a.controller.ReconcileFromMeter...
 			body, err := json.Marshal(data)
 			if err != nil {
 				logrus.Errorf("error marshal %s meter %s: %s", data.Model, data.Id, err)
