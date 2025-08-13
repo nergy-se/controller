@@ -283,6 +283,7 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 					return err
 				}
 				if m.Model == "p1ib" {
+					primaryID := m.PrimaryID
 					err := a.mqttServer.Subscribe("p1ib/sensor_state", 1, func(cl *mqttv2.Client, sub packets.Subscription, pk packets.Packet) {
 						data := &mqtt.P1ib{}
 						err := json.Unmarshal(pk.Payload, data)
@@ -291,7 +292,7 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 							return
 						}
 
-						meterData := data.AsMeterData(m.PrimaryID)
+						meterData := data.AsMeterData(primaryID)
 						meterData.Time = time.Now()
 						a.meterCache.Set(meterData)
 					})
@@ -488,13 +489,13 @@ func (a *App) sendMeterValues() {
 
 		body, err := json.Marshal(data)
 		if err != nil {
-			logrus.Errorf("error marshal mbus meter %s: %s", m.PrimaryID, err)
+			logrus.Errorf("error marshal %s meter %s: %s", m.InterfaceType, m.PrimaryID, err)
 			continue
 		}
 
 		err = a.postWithRetry("api/controller/meter-v1", body)
 		if err != nil {
-			logrus.Errorf("error POST mbus meter %s: %s", m.PrimaryID, err)
+			logrus.Errorf("error POST %s meter %s: %s", m.InterfaceType, m.PrimaryID, err)
 			continue
 		}
 	}
