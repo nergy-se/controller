@@ -81,10 +81,7 @@ func (ts *Thermiagenesis) State() (*state.State, error) {
 	if err != nil {
 		return s, err
 	}
-	s.Indoor, err = controller.Scale100itof(ts.client.ReadInputRegister(121)) // Room temperature sensor scale 10
-	if err != nil {
-		return s, err
-	}
+
 	s.RadiatorForward, err = controller.Scale100itof(ts.client.ReadInputRegister(12)) // System supply line temperature scale 100 visar bara 200.0 om inte inkopplad.
 	// https://github.com/CJNE/thermiagenesis/issues/157#issuecomment-1250896092
 	if err != nil {

@@ -14,7 +14,9 @@ type ValveState bool
 
 type State struct {
 	Time                     time.Time `json:"time"`
+	IndoorMin                *float64  `json:"indoorMin,omitempty"`
 	Indoor                   *float64  `json:"indoor,omitempty"`
+	IndoorMax                *float64  `json:"indoorMax,omitempty"`
 	IndoorSetpoint           *float64  `json:"indoorSetpoint,omitempty"`
 	Outdoor                  *float64  `json:"outdoor,omitempty"`
 	HeatCarrierForward       *float64  `json:"heatCarrierForward,omitempty"`

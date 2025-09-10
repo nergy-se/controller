@@ -32,6 +32,7 @@ type CloudConfig struct {
 type Meter struct {
 	InterfaceType string `json:"interfaceType"`
 	Model         string `json:"model"`
+	Position      string `json:"position"` // where is the meter connected heatpump
 	PrimaryID     string `json:"primaryId"`
 	Address       string `json:"address"`
 }

@@ -196,32 +196,42 @@ func TestThermiaSendCurrentConfig(t *testing.T) {
 func TestThermiaChangeConfigFromCloud(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	var tests = []struct {
-		name                    string
-		curve                   []float64
-		expectedSetCurveOnPump  []float64
-		adjust                  float64
-		expectedSetAdjustOnPump float64
+		name                           string
+		curve                          []float64
+		expectedSetCurveOnPump         []float64
+		adjust                         float64
+		expectedSetAdjustOnPump        float64
+		hotWaterNormalStartTemperature int
+		hotWaterNormalStopTemperature  int
+		reconcileAgain                 bool
 	}{
 		{
-			name:                    "test set curve +1 offset",
-			curve:                   []float64{20, 26, 31, 35, 38, 45, 52},
-			adjust:                  1,
-			expectedSetCurveOnPump:  []float64{21, 27, 32, 36, 39, 46, 53},
-			expectedSetAdjustOnPump: 21,
+			name:                           "test set curve +1 offset",
+			curve:                          []float64{20, 26, 31, 35, 38, 45, 52},
+			adjust:                         1,
+			expectedSetCurveOnPump:         []float64{21, 27, 32, 36, 39, 46, 53},
+			expectedSetAdjustOnPump:        21,
+			hotWaterNormalStartTemperature: 45,
+			hotWaterNormalStopTemperature:  57,
 		},
 		{
-			name:                    "test set curve without offset",
-			curve:                   []float64{20, 26, 31, 35, 38, 45, 52},
-			adjust:                  0,
-			expectedSetCurveOnPump:  []float64{20, 26, 31, 35, 38, 45, 52},
-			expectedSetAdjustOnPump: 20,
+			name:                           "test set curve without offset",
+			curve:                          []float64{20, 26, 31, 35, 38, 45, 52},
+			adjust:                         0,
+			expectedSetCurveOnPump:         []float64{20, 26, 31, 35, 38, 45, 52},
+			expectedSetAdjustOnPump:        20,
+			hotWaterNormalStartTemperature: 45,
+			hotWaterNormalStopTemperature:  57,
 		},
 		{
-			name:                    "test set curve -1 offset",
-			curve:                   []float64{20, 26, 31, 35, 38, 45, 52},
-			adjust:                  -1,
-			expectedSetCurveOnPump:  []float64{19, 25, 30, 34, 37, 44, 51},
-			expectedSetAdjustOnPump: 19,
+			name:                           "test set curve -1 offset",
+			curve:                          []float64{20, 26, 31, 35, 38, 45, 52},
+			adjust:                         -1,
+			expectedSetCurveOnPump:         []float64{19, 25, 30, 34, 37, 44, 51},
+			expectedSetAdjustOnPump:        19,
+			hotWaterNormalStartTemperature: 50, // differs check so new config is loaded
+			hotWaterNormalStopTemperature:  58,
+			reconcileAgain:                 true,
 		},
 	}
 	for _, tt := range tests {
@@ -251,8 +261,8 @@ func TestThermiaChangeConfigFromCloud(t *testing.T) {
   "maxLevelHotwater": 10,
   "hotWaterBoostStartTemperature": 52,
   "hotWaterBoostStopTemperature": 58,
-  "hotWaterNormalStartTemperature": 45,
-  "hotWaterNormalStopTemperature": 57,
+  "hotWaterNormalStartTemperature": %d,
+  "hotWaterNormalStopTemperature": %d,
   "levelFormula": "",
   "currency": "",
   "districtHeatingPrice": 0,
@@ -261,7 +271,7 @@ func TestThermiaChangeConfigFromCloud(t *testing.T) {
   "heatCurveAdjust": %s,
   "heatCurve": %s,
   "heatingSeasonStopTemperature": 13
-}`, strconv.FormatFloat(tt.adjust, 'g', -1, 64), string(j))).Filter(func(r *http.Request) bool {
+}`, tt.hotWaterNormalStartTemperature, tt.hotWaterNormalStopTemperature, strconv.FormatFloat(tt.adjust, 'g', -1, 64), string(j))).Filter(func(r *http.Request) bool {
 				if r.Header.Get("x-fetch") == "ControllerConfig" {
 					defer close(done)
 					return true
@@ -333,11 +343,17 @@ func TestThermiaChangeConfigFromCloud(t *testing.T) {
 				return uint16(0) != serv.HoldingRegisters[12]
 			})
 
+			if tt.reconcileAgain {
+				app.DoReconcile()
+			}
+
 			assert.Equal(t, int(tt.expectedSetAdjustOnPump*100), int(serv.HoldingRegisters[5]))
 			for i, temp := range tt.expectedSetCurveOnPump {
 				assert.Equal(t, int(temp*100), int(serv.HoldingRegisters[i+6]))
 			}
 			assert.Equal(t, int(13*100), int(serv.HoldingRegisters[16]))
+			assert.Equal(t, int(tt.hotWaterNormalStartTemperature*100), int(serv.HoldingRegisters[22]))
+			assert.Equal(t, int(tt.hotWaterNormalStopTemperature*100), int(serv.HoldingRegisters[23]))
 
 			mock.AssertMocksCalled(t)
 		})
@@ -430,21 +446,16 @@ func TestThermiaAllowedMinValues(t *testing.T) {
 		func(r *http.Request) int { // first call
 			b, err := io.ReadAll(r.Body)
 			assert.NoError(t, err)
+			// fmt.Println(string(b))
 			assert.Contains(t, string(b), `"heatingAllowed":false,"hotwaterAllowed":false`)
-			defer close(done)
-			return 200
-		}, func(r *http.Request) int { // second call
-			b, err := io.ReadAll(r.Body)
-			assert.NoError(t, err)
-			assert.Contains(t, string(b), `"heatingAllowed":true,"hotwaterAllowed":true`)
 			defer close(done)
 			return 200
 		}).SetMethod("POST")
 
 	serv := mbserver.NewServer()
 
-	serv.InputRegisters[131] = toUint(15.0 * 100) // Indoor temp
-	serv.InputRegisters[17] = toUint(39.0 * 100)  // hotwater temp
+	serv.InputRegisters[121] = toUint(15.0 * 10) // Indoor temp
+	serv.InputRegisters[17] = toUint(39.0 * 100) // hotwater temp
 	err := serv.ListenTCP("127.0.0.1:1502")
 	assert.NoError(t, err)
 	defer serv.Close()
@@ -456,10 +467,132 @@ func TestThermiaAllowedMinValues(t *testing.T) {
 
 	<-done
 
-	app.DoReconcile() // after second reconcile we should be guarded by allowedMinIndoorTemp and allowedMinHotWaterTemp
+	assert.Equal(t, uint8(0), serv.Coils[8]) // allow hotwater
+	assert.Equal(t, uint8(0), serv.Coils[9]) // allow heating
+	app.DoReconcile()                        // after second reconcile we should be guarded by allowedMinIndoorTemp and allowedMinHotWaterTemp
 
 	assert.Equal(t, uint16(4500), serv.HoldingRegisters[22])
 	assert.Equal(t, uint16(5700), serv.HoldingRegisters[23])
+	assert.Equal(t, uint8(1), serv.Coils[8]) // allow hotwater
+	assert.Equal(t, uint8(1), serv.Coils[9]) // allow heating
+	mock.AssertCallCount(t, "POST", "/api/controller/config-v1", 1)
+	mock.AssertCallCount(t, "POST", "/api/controller/metrics-v1", 1)
+	mock.AssertMocksCalled(t)
+}
+
+func TestThermiaAllowedMaxIndoorTemp(t *testing.T) {
+	logrus.SetLevel(logrus.DebugLevel)
+	mock := gohtmock.New()
+	config := &config.CliConfig{
+		Server:     mock.URL(),
+		SerialFile: "/dev/null",
+		APIToken:   "mysecrettoken",
+	}
+	app := app.New(config)
+
+	done := make(chan bool)
+	mock.Mock("/api/controller/config-v1", `
+{
+  "controllerId": "88e7f9b7-7a6d-41e1-9861-081799844311",
+  "heatControlType": "thermiagenesis",
+  "address": "127.0.0.1:1502",
+  "consideredCheap": 0,
+  "electricBasePrice": 0,
+  "hotWaterHours": 2,
+  "maxLevelHeating": 10,
+  "maxLevelHotwater": 10,
+  "hotWaterBoostStartTemperature": 52,
+  "hotWaterBoostStopTemperature": 58,
+  "hotWaterNormalStartTemperature": 45,
+  "hotWaterNormalStopTemperature": 57,
+  "levelFormula": "",
+  "currency": "",
+  "districtHeatingPrice": 0,
+  "COP": 0,
+  "heatCurveControlEnabled": true,
+  "heatCurveAdjust": 0,
+  "heatCurve": [    19,    26,    31,    35,    38,    45,    52  ],
+"meters": [
+    {
+      "id": "f32219ae-9ec2-4b02-8097-34166f1855ca",
+      "controllerId": "88e7f9b7-7a6d-41e1-9861-0817998443c7",
+      "interfaceType": "modbus-tcp",
+      "model": "holdingreg-10scale-16bit",
+      "position": "indoor_temp_avg",
+      "primaryId": "111",
+      "address": "127.0.0.1:2502"
+    },
+    {
+      "id": "f32219ae-9ec2-4b02-8097-34166f1855c1",
+      "controllerId": "88e7f9b7-7a6d-41e1-9861-0817998443c7",
+      "interfaceType": "modbus-tcp",
+      "model": "holdingreg-10scale-16bit",
+      "position": "indoor_temp_min",
+      "primaryId": "112",
+      "address": "127.0.0.1:2502"
+    }
+  ],
+  "heatingSeasonStopTemperature": 13,
+  "allowedMinIndoorTemp":16,
+  "allowedMaxIndoorTemp":22,
+  "allowedMinHotWaterTemp":40
+}`)
+
+	mock.Mock("/api/controller/schedule-v1", fmt.Sprintf(`
+{
+  "%[1]s": {
+    "time": "%[1]s",
+    "price": 0.417,
+    "hotwater": true,
+    "hotwaterForce": false,
+    "heating": true
+  }
+}`, time.Now().Format(time.RFC3339)))
+	mock.Mock("/api/controller/config-v1", "", func(r *http.Request) int {
+		return 200
+	}).SetMethod("POST")
+	mock.Mock("/api/controller/metrics-v1", "",
+		func(r *http.Request) int { // first call
+			b, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+			assert.Contains(t, string(b), `"heatingAllowed":true,"hotwaterAllowed":true`)
+			assert.Contains(t, string(b), `"indoor":23`)    // fetched from modbus-tcp
+			assert.Contains(t, string(b), `"indoorMin":16`) // assert modbus-tcp overrides the one from heatpump
+			assert.Contains(t, string(b), `"warmWater":50`)
+			// fmt.Println(string(b))
+			defer close(done)
+			return 200
+		}).SetMethod("POST")
+
+	serv := mbserver.NewServer()
+	serv.InputRegisters[121] = toUint(23.0 * 10) // Indoor temp
+	serv.InputRegisters[17] = toUint(50.0 * 100) // hotwater temp
+	err := serv.ListenTCP("127.0.0.1:1502")
+	assert.NoError(t, err)
+	defer serv.Close()
+
+	modbusTcpMeter := mbserver.NewServer()
+	modbusTcpMeter.HoldingRegisters[111] = toUint(23.0 * 10) // Indoor average temp
+	modbusTcpMeter.HoldingRegisters[112] = toUint(16.0 * 10) // Indoor min temp
+	err = modbusTcpMeter.ListenTCP("127.0.0.1:2502")
+	assert.NoError(t, err)
+	defer modbusTcpMeter.Close()
+
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+	err = app.Start(ctx)
+	assert.NoError(t, err)
+
+	<-done
+
+	assert.Equal(t, uint8(1), serv.Coils[8]) // allow hotwater
+	assert.Equal(t, uint8(1), serv.Coils[9]) // allow heating
+	app.DoReconcile()
+
+	assert.Equal(t, uint16(4500), serv.HoldingRegisters[22])
+	assert.Equal(t, uint16(5700), serv.HoldingRegisters[23])
+	assert.Equal(t, uint8(1), serv.Coils[8]) // allow hotwater
+	assert.Equal(t, uint8(0), serv.Coils[9]) // allow heating should be false since indoor_avg > allowedMaxIndoorTemp
 	mock.AssertCallCount(t, "POST", "/api/controller/config-v1", 1)
 	mock.AssertCallCount(t, "POST", "/api/controller/metrics-v1", 1)
 	mock.AssertMocksCalled(t)

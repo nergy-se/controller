@@ -57,26 +57,24 @@ type App struct {
 	ctx            context.Context
 	stopController context.CancelFunc
 
-	mqttServer      *mqttv2.Server
-	meterCache      *meter.Cache
-	stateCache      *state.Cache
-	meterStateCache *state.Cache
+	mqttServer *mqttv2.Server
+	meterCache *meter.Cache
+	stateCache *state.Cache
 
 	metricsTicker time.Duration
 }
 
 func New(config *v1config.CliConfig) *App {
 	return &App{
-		wg:              &sync.WaitGroup{},
-		cliConfig:       config,
-		schedule:        v1config.NewConfig(),
-		activeAlarms:    &alarm.ActiveAlarms{},
-		mbusClient:      mbus.New(),
-		sendQueue:       make(chan *postRequest, 20000),
-		meterCache:      &meter.Cache{},
-		stateCache:      &state.Cache{},
-		meterStateCache: &state.Cache{},
-		metricsTicker:   time.Second * 30,
+		wg:            &sync.WaitGroup{},
+		cliConfig:     config,
+		schedule:      v1config.NewConfig(),
+		activeAlarms:  &alarm.ActiveAlarms{},
+		mbusClient:    mbus.New(),
+		sendQueue:     make(chan *postRequest, 20000),
+		meterCache:    &meter.Cache{},
+		stateCache:    &state.Cache{},
+		metricsTicker: time.Second * 30,
 	}
 }
 
@@ -202,7 +200,7 @@ func (a *App) syncCloudConfig(fromXFetch string) error {
 	heatCurveDiff := !slices.Equal(a.cloudConfig.HeatCurve, cloudConfig.HeatCurve) || a.cloudConfig.HeatCurveAdjust != cloudConfig.HeatCurveAdjust
 	heatingSeasonStopTemperatureDiff := a.cloudConfig.HeatingSeasonStopTemperature != cloudConfig.HeatingSeasonStopTemperature
 
-	a.cloudConfig = cloudConfig
+	*a.cloudConfig = *cloudConfig
 
 	err = a.StartMQTTServer(a.ctx) //TODO we use parent context here so if we would like to react on changed mqtt config we need to use ctx to it gets restarted.
 	if err != nil {
@@ -277,7 +275,6 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 		if m.InterfaceType == "mqtt" {
 			hasAnyMQTT = true
 			if a.mqttServer == nil {
-				// TODO allow incoming TCP on 1883 on controllerimage iptables rules.
 				a.mqttServer, err = mqtt.Start(ctx, a.wg)
 				if err != nil {
 					return err
@@ -346,8 +343,8 @@ func (a *App) doRefreshToken() {
 }
 
 func (a *App) doSendMetrics() {
-	a.sendMeterValues()
-	err := a.sendMetrics()
+	stateOverride := a.sendMeterValues()
+	err := a.sendMetrics(stateOverride)
 	if err != nil {
 		logrus.Errorf("error sendMetrics: %s", err.Error())
 		if strings.Contains(err.Error(), "error fetching state:") {
@@ -389,28 +386,43 @@ func (a *App) reconcile() error {
 	}
 
 	// indoor temp rules here
-	if t := a.stateCache.Get().Indoor; t != nil && *t < a.cloudConfig.AllowedMinIndoorTemp { // dont allow cooler than the setting indoor
-		logrus.Debug("heating true due to AllowedMinIndoorTemp")
-		current.Heating = true
+
+	indoor := a.stateCache.Get().IndoorMin
+	if indoor == nil {
+		indoor = a.stateCache.Get().Indoor // fallback to check AllowedMinIndoorTemp against Indoor temp if we dont have a indoor_min custom meter
+	}
+	if indoor != nil {
+		if *indoor < a.cloudConfig.AllowedMinIndoorTemp { // dont allow cooler than the setting indoor
+			logrus.Debugf("heating true due to AllowedMinIndoorTemp %f < %f", *indoor, a.cloudConfig.AllowedMinIndoorTemp)
+			current.Heating = true
+		}
 	}
 	if t := a.stateCache.Get().WarmWater; t != nil && *t < a.cloudConfig.AllowedMinHotWaterTemp { // dont allow cooler than AllowedMinHotWaterTemp
-		logrus.Debug("hotwater true due to AllowedMinHotWaterTemp")
+		logrus.Debugf("hotwater true due to AllowedMinHotWaterTemp %f < %f", *t, a.cloudConfig.AllowedMinHotWaterTemp)
 		current.Hotwater = true
+	}
+
+	if t := a.stateCache.Get().Indoor; t != nil && *t > a.cloudConfig.AllowedMaxIndoorTemp && a.cloudConfig.AllowedMaxIndoorTemp != 0 {
+		logrus.Debugf("heating false due to AllowedMaxIndoorTemp %f > %f", *t, a.cloudConfig.AllowedMaxIndoorTemp)
+		current.Heating = false
 	}
 
 	return a.controller.Reconcile(current)
 }
 
-func (a *App) sendMetrics() error {
+func (a *App) sendMetrics(stateOverride *state.State) error {
 	state, err := a.controller.State()
 	if err != nil {
 		return fmt.Errorf("error fetching state: %w", err)
 	}
 	state.Time = time.Now()
 
-	cachedState := a.meterStateCache.Get() // always override with values from meterStateCache
-	if cachedState.Indoor != nil {         //TODO make this more generic with more fields etc.
-		state.Indoor = cachedState.Indoor
+	//TODO make this more generic with merge 2 structs
+	if stateOverride.Indoor != nil {
+		state.Indoor = stateOverride.Indoor
+	}
+	if stateOverride.IndoorMin != nil {
+		state.IndoorMin = stateOverride.IndoorMin
 	}
 	a.stateCache.Set(state)
 
@@ -425,8 +437,9 @@ func (a *App) sendMetrics() error {
 
 var ErrQueueFull = errors.New("queue full")
 
-func (a *App) sendMeterValues() {
+func (a *App) sendMeterValues() *state.State {
 
+	state := &state.State{}
 	if con, ok := a.controller.(*hogforsgst.Hogforsgst); ok {
 		datas, err := con.MeterData()
 		if err != nil {
@@ -448,6 +461,7 @@ func (a *App) sendMeterValues() {
 		}
 	}
 
+outer:
 	for _, m := range a.cloudConfig.Meters {
 		var data *meter.Data
 		var err error
@@ -463,7 +477,7 @@ func (a *App) sendMeterValues() {
 				data = a.meterCache.Get()
 			}
 		case "modbus-tcp":
-			if m.Model == "holdingreg-10scale-16bit" { // TODO add m.Position = indoor_temp
+			if m.Model == "holdingreg-10scale-16bit" {
 
 				handler := modbus.NewTCPClientHandler(m.Address)
 				c := modbusclient.New(modbus.NewClient(handler), handler.Close)
@@ -474,9 +488,16 @@ func (a *App) sendMeterValues() {
 				if err != nil {
 					logrus.Errorf("error ReadHoldingRegister16 from address:%s id:%s", m.Address, m.PrimaryID)
 				}
-				t := float64(val) / 10.0
-				a.meterStateCache.Set(&state.State{Indoor: &t})
-				continue // continue for loos since we have nothing to POST to meter-v1 here (send with controller metrics)
+				if m.Position == "indoor_temp" || m.Position == "indoor_temp_min" { // indoor_temp is deprecated and can be removed once all controllers are updated
+					t := float64(val) / 10.0
+					state.IndoorMin = &t
+					continue outer // continue for loos since we have nothing to POST to meter-v1 here (send with controller metrics)
+				}
+				if m.Position == "indoor_temp_avg" {
+					t := float64(val) / 10.0
+					state.Indoor = &t
+					continue outer // continue for loos since we have nothing to POST to meter-v1 here (send with controller metrics)
+				}
 			}
 		default:
 			continue
@@ -499,6 +520,7 @@ func (a *App) sendMeterValues() {
 			continue
 		}
 	}
+	return state
 }
 
 func (a *App) sendAlarms() error {
@@ -638,3 +660,55 @@ func (a *App) do(u string, method string, dst any, body io.Reader, header http.H
 	}
 	return resp.StatusCode, json.NewDecoder(resp.Body).Decode(dst)
 }
+
+// TODO 15 min elpris
+/*
+
+
+// calculateNextDelay determines the duration to wait until the next 15-minute mark.
+func calculateNextDelay() time.Duration {
+	now := time.Now()
+	// Calculate the next quarter-hour mark (0, 15, 30, 45)
+	nextQuarter := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		now.Hour(),
+		(now.Minute()/15+1)*15, // This clever math finds the next 15-min interval
+		0,
+		0,
+		now.Location(),
+	)
+	return time.Until(nextQuarter)
+}
+
+func main() {
+	// --- 1. Calculate the first delay ---
+	// Based on the current time of 20:57:45, the next run is at 21:00:00.
+	// The initial delay will be 2 minutes and 15 seconds.
+	delay := calculateNextDelay()
+	fmt.Printf("Scheduler started. Next run in %s\n", delay.Round(time.Second))
+
+	// --- 2. Create a single timer ---
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	// --- 3. Start the infinite loop ---
+	for {
+		// Wait for the timer to fire.
+		<-timer.C
+
+		// Run the task in a new goroutine.
+		// This prevents a long-running task from delaying the next schedule calculation.
+		fmt.Println("do stuff")
+
+		// --- 4. Recalculate and Reset ---
+		// Immediately calculate the delay for the *next* run and reset the timer.
+		// This is the key to preventing drift.
+		delay = calculateNextDelay()
+		timer.Reset(delay)
+		fmt.Printf("Task triggered. Next run in %s (at %s)\n",
+			delay.Round(time.Second), time.Now().Add(delay).Format("15:04:05"))
+	}
+}
+*/
