@@ -61,10 +61,18 @@ func (s *Config) Last() *HourConfig {
 }
 
 func (s *Config) Current() *HourConfig {
+	return s.current(time.Now())
+}
+func (s *Config) current(when time.Time) *HourConfig {
+	priceRange := 60 * time.Minute
+	if s.isQuarterPrices() {
+		priceRange = 15 * time.Minute
+	}
+
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	for t, hour := range s.schedule {
-		if inTimeSpan(t, t.Add(60*time.Minute), time.Now()) {
+		if inTimeSpan(t, t.Add(priceRange), when) {
 			return hour
 		}
 	}
@@ -72,9 +80,21 @@ func (s *Config) Current() *HourConfig {
 	return nil
 }
 
+func (s *Config) isQuarterPrices() bool {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	for t := range s.schedule {
+		if t.Minute() == 15 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func inTimeSpan(start, end, check time.Time) bool {
 	if start.Before(end) {
-		return !check.Before(start) && !check.After(end)
+		return !check.Before(start) && !check.After(end) && !check.Equal(end)
 	}
 	if start.Equal(end) {
 		return check.Equal(start)

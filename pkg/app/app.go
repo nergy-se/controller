@@ -309,7 +309,7 @@ func (a *App) StartMQTTServer(ctx context.Context) error {
 
 func (a *App) controllerLoop(ctx context.Context) {
 	defer a.wg.Done()
-	delay := nextDelay()
+	delay := calculateNextDelay()
 	timer := time.NewTimer(delay)
 	a.doSendMetrics()
 
@@ -323,8 +323,8 @@ func (a *App) controllerLoop(ctx context.Context) {
 			a.doSendMetrics()
 			a.doSendAlarms()
 		case <-timer.C:
-			timer.Reset(nextDelay())
 			a.DoReconcile()
+			timer.Reset(calculateNextDelay())
 		case <-scheduleTicker.C:
 			a.doUpdateSchedule()
 		case <-refreshToken.C:

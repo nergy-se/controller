@@ -2,14 +2,18 @@ package app
 
 import "time"
 
-func nextDelay() time.Duration {
+func calculateNextDelay() time.Duration {
 	now := time.Now()
-	return truncateHour(now).Add(time.Hour).Sub(now)
-}
-func truncateHour(t time.Time) time.Time {
-	t = t.Truncate(time.Minute * 30)
-	if t.Minute() > 0 {
-		t = t.Add(time.Minute * -1).Truncate(time.Minute * 30)
-	}
-	return t
+	// Calculate the next quarter-hour mark (0, 15, 30, 45)
+	nextQuarter := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		now.Hour(),
+		(now.Minute()/15+1)*15, // This clever math finds the next 15-min interval
+		0,
+		0,
+		now.Location(),
+	)
+	return time.Until(nextQuarter)
 }
